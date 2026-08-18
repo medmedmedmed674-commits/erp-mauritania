@@ -149,91 +149,144 @@ class _InventoryCard extends StatelessWidget {
   const _InventoryCard({required this.product});
   final Product product;
 
+  Future<void> _confirmDelete(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تأكيد حذف المنتج'),
+          content: Text(
+              'هل أنت متأكد من حذف "${product.name}"؟ لا يمكن التراجع عن هذه العملية.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.danger,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      context.read<RetailStore>().deleteProduct(product.id);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('تم حذف "${product.name}"'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () {},
+        onLongPress: () => _confirmDelete(context),
         child: Padding(
           padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
             children: [
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: product.color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(product.icon, size: 18, color: product.color),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: product.color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(product.icon, size: 18, color: product.color),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          product.name,
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w800),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      product.name,
-                      style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w800),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          product.category.arabicLabel,
+                          style: const TextStyle(
+                              fontSize: 11, color: AppTheme.textSecondary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (product.isLowStock) ...[
+                        const SizedBox(width: 6),
+                        const StatPill(
+                          label: 'منخفض',
+                          value: '',
+                          tone: StatTone.danger,
+                          icon: Icons.warning_amber,
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'الكمية: ${product.stock}',
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: LtrText(
+                            Money.formatWithCurrency(product.unitPrice),
+                            style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: AppTheme.primary),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const Spacer(),
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      product.category.arabicLabel,
-                      style: const TextStyle(
-                          fontSize: 11, color: AppTheme.textSecondary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (product.isLowStock) ...[
-                    const SizedBox(width: 6),
-                    const StatPill(
-                      label: 'منخفض',
-                      value: '',
-                      tone: StatTone.danger,
-                      icon: Icons.warning_amber,
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        'الكمية: ${product.stock}',
-                        style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: LtrText(
-                        Money.formatWithCurrency(product.unitPrice),
-                        style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.primary),
-                      ),
-                    ),
-                  ),
-                ],
+              // Long-press hint affordance
+              Positioned(
+                top: 0,
+                left: 0,
+                child: Icon(
+                  Icons.more_vert,
+                  size: 16,
+                  color: AppTheme.textSecondary.withValues(alpha: 0.4),
+                ),
               ),
             ],
           ),

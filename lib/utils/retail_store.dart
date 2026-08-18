@@ -99,6 +99,26 @@ class RetailStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes a product from the catalogue by id.
+  /// Returns true if a product was removed.
+  bool deleteProduct(String id) {
+    final i = _products.indexWhere((p) => p.id == id);
+    if (i == -1) return false;
+    _products.removeAt(i);
+    notifyListeners();
+    return true;
+  }
+
+  /// Updates a product in place by id. Used by the edit-product flow
+  /// when we add it in a future iteration.
+  void updateProduct(Product updated) {
+    final i = _products.indexWhere((p) => p.id == updated.id);
+    if (i != -1) {
+      _products[i] = updated;
+      notifyListeners();
+    }
+  }
+
   // ----- Mutations: customers -----
   Customer? findCustomer(String id) {
     for (final c in _customers) {
@@ -136,6 +156,16 @@ class RetailStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes an expense from the ledger by id.
+  /// Returns true if an expense was removed.
+  bool deleteExpense(String id) {
+    final i = _expenses.indexWhere((e) => e.id == id);
+    if (i == -1) return false;
+    _expenses.removeAt(i);
+    notifyListeners();
+    return true;
+  }
+
   /// Total expenses for the current month, used in the summary header.
   double get monthExpenses {
     final now = DateTime.now();
@@ -153,4 +183,35 @@ class RetailStore extends ChangeNotifier {
     }
     return map;
   }
+
+  // ----- Analytics: date-filtered metrics -----
+  /// Returns all invoices whose [date] is on the same calendar day as
+  /// the given [day]. Used by the Analytics tab date picker.
+  List<Invoice> invoicesForDay(DateTime day) => _invoices
+      .where((inv) =>
+          inv.date.year == day.year &&
+          inv.date.month == day.month &&
+          inv.date.day == day.day)
+      .toList();
+
+  /// Total sales for a specific day (sum of all invoice totals).
+  double salesForDay(DateTime day) =>
+      invoicesForDay(day).fold(0.0, (s, i) => s + i.total);
+
+  /// Net profit for a specific day. Computed as the sum of per-line
+  /// profit margins (retail price minus wholesale cost) for each
+  /// invoice on that day.
+  double profitForDay(DateTime day) {
+    return invoicesForDay(day).fold<double>(
+      0.0,
+      (sum, inv) => sum + inv.items.fold<double>(0.0, (s, l) => s + l.quantity * l.product.unitMargin),
+    );
+  }
+
+  /// Returns all invoices in a given month (used for the monthly bar
+  /// chart in the wholesale analytics).
+  List<Invoice> invoicesForMonth(DateTime month) => _invoices
+      .where((inv) =>
+          inv.date.year == month.year && inv.date.month == month.month)
+      .toList();
 }

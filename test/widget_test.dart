@@ -3,6 +3,7 @@
 // feature set grows.
 
 import 'package:erp_mauritania/main.dart';
+import 'package:erp_mauritania/screens/retail/analytics_tab.dart';
 import 'package:erp_mauritania/screens/retail/pos_tab.dart';
 import 'package:erp_mauritania/screens/retail/customers_tab.dart';
 import 'package:erp_mauritania/screens/retail/inventory_tab.dart';
@@ -101,5 +102,15 @@ void main() {
     await tester.pumpWidget(const _RetailTabHarness(child: ExpensesTab()));
     await tester.pumpAndSettle();
     expect(find.text('إدارة المصروفات'), findsOneWidget);
+  });
+
+  testWidgets('Analytics tab renders the daily summary header', (tester) async {
+    tester.view.physicalSize = surfaceSize;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(const _RetailTabHarness(child: AnalyticsTab()));
+    await tester.pumpAndSettle();
+    expect(find.text('التحليلات اليومية'), findsOneWidget);
   });
 }

@@ -75,9 +75,15 @@ class _AddProductDialogState extends State<AddProductDialog> {
         icon: _iconFor(_category),
         color: _colorFor(_category),
       );
+      // Capture the messenger BEFORE popping the dialog, otherwise
+      // the ScaffoldMessenger.of(context) call will fail with
+      // "deactivated widget's ancestor" — this is the root cause of
+      // the "Failed to add product" bug.
+      final messenger = ScaffoldMessenger.of(context);
+      final navigator = Navigator.of(context);
       context.read<RetailStore>().addProduct(product);
-      if (mounted) Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      navigator.pop();
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('تمت إضافة المنتج بنجاح'),
           backgroundColor: AppTheme.success,

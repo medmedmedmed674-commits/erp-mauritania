@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/product.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/money.dart';
+import '../../utils/retail_store.dart';
 import '../../utils/validators.dart';
 import '../../widgets/ltr_text.dart';
 import '../../widgets/responsive.dart';
 import '../../widgets/shared_widgets.dart';
 
 /// Tab 4 — Purchases & WhatsApp Ordering.
-/// Interactive order builder for restocking from wholesale market
-/// suppliers. The "Send Order" action launches a WhatsApp chat with
-/// the supplier pre-filled with the itemized invoice text.
+///
+/// The wholesale catalog is **automatically synced** from the retail
+/// inventory: each item in the store's `RetailStore.products` becomes
+/// an orderable line in this tab, and the wholesale price (per carton)
+/// is derived from the product's `wholesaleCost` field via the
+/// `_Product.orderCartonPrice` extension below.
+///
+/// The "Send Order" action launches a WhatsApp chat with the supplier
+/// pre-filled with the itemized order invoice.
 class PurchasesTab extends StatefulWidget {
   const PurchasesTab({super.key});
 
@@ -25,63 +33,31 @@ class _PurchasesTabState extends State<PurchasesTab> {
   final _supplierPhone = TextEditingController();
   final Map<String, int> _quantities = {};
 
-  static const List<Product> _catalog = [
-    Product(
-      id: 'W-001',
-      name: 'أرز بسمتي كرتون 12×5كغ',
-      category: ProductCategory.groceries,
-      unitPrice: 3500,
-      cartonPrice: 3500,
-      cartonSize: 12,
-      stock: 180,
-      icon: Icons.all_inbox_outlined,
-      color: Color(0xFFD9A24E),
-      batchNumber: 'B-2026-001',
-    ),
-    Product(
-      id: 'W-002',
-      name: 'سكر كرتون 24×1كغ',
-      category: ProductCategory.groceries,
-      unitPrice: 1450,
-      cartonPrice: 1450,
-      cartonSize: 24,
-      stock: 96,
-      icon: Icons.all_inbox_outlined,
-      color: Color(0xFF6FB1E0),
-      batchNumber: 'B-2026-014',
-    ),
-    Product(
-      id: 'W-003',
-      name: 'زيت 12×1لتر',
-      category: ProductCategory.groceries,
-      unitPrice: 2050,
-      cartonPrice: 2050,
-      cartonSize: 12,
-      stock: 14,
-      icon: Icons.all_inbox_outlined,
-      color: Color(0xFFE0B144),
-      batchNumber: 'B-2026-007',
-    ),
-    Product(
-      id: 'W-004',
-      name: 'حليب بودرة 8×900غ',
-      category: ProductCategory.dairy,
-      unitPrice: 3400,
-      cartonPrice: 3400,
-      cartonSize: 8,
-      stock: 42,
-      icon: Icons.all_inbox_outlined,
-      color: Color(0xFFB8C7E0),
-      batchNumber: 'B-2026-022',
-    ),
-  ];
+  /// Returns the wholesale catalog: live inventory items projected to
+  /// "carton" wholesale entries. The wholesale price is derived from
+  /// `wholesaleCost × cartonSize` (or `unitPrice × 0.85` as a fallback
+  /// when no cost is set, to give an indicative 15% margin).
+  List<Product> get _catalog {
+    final products = context.read<RetailStore>().products;
+    return products
+        .map((p) {
+          final cartonSize = 12; // default carton size
+          final cartonPrice = p.wholesaleCost > 0
+              ? p.wholesaleCost * cartonSize
+              : p.unitPrice * cartonSize * 0.85;
+          return p.copyWith(
+            cartonPrice: cartonPrice,
+            cartonSize: cartonSize,
+          );
+        })
+        .toList();
+  }
 
   double get _total => _quantities.entries.fold(
         0.0,
         (s, e) =>
             s +
-            _catalog.firstWhere((p) => p.id == e.key).cartonPrice *
-                e.value,
+            _catalog.firstWhere((p) => p.id == e.key).cartonPrice * e.value,
       );
 
   void _setQty(Product p, int q) {
@@ -94,11 +70,9 @@ class _PurchasesTabState extends State<PurchasesTab> {
     });
   }
 
-  void _increment(Product p) =>
-      _setQty(p, (_quantities[p.id] ?? 0) + 1);
+  void _increment(Product p) => _setQty(p, (_quantities[p.id] ?? 0) + 1);
 
-  void _decrement(Product p) =>
-      _setQty(p, (_quantities[p.id] ?? 0) - 1);
+  void _decrement(Product p) => _setQty(p, (_quantities[p.id] ?? 0) - 1);
 
   Future<void> _sendWhatsApp() async {
     final nameError =
@@ -177,7 +151,7 @@ class _PurchasesTabState extends State<PurchasesTab> {
       children: [
         const SectionTitle(
           title: 'إدارة المشتريات',
-          subtitle: 'اطلب البضاعة من الموردين عبر واتساب مباشرة',
+          subtitle: 'كتالوج السوق مشتق تلقائياً من مخزونك — اطلب عبر واتساب',
           icon: Icons.shopping_cart_checkout_outlined,
         ),
         const SizedBox(height: 16),
@@ -207,21 +181,29 @@ class _PurchasesTabState extends State<PurchasesTab> {
   }
 
   Widget _buildCatalog() {
+    final catalog = _catalog;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SectionTitle(
           title: 'كتالوج سوق الجملة',
-          subtitle: 'حدد الكميات المطلوبة من كل صنف',
-          icon: Icons.store_outlined,
+          subtitle: 'مزامنة تلقائية مع مخزونك الحالي',
+          icon: Icons.sync_outlined,
         ),
         const SizedBox(height: 12),
-        ..._catalog.map((p) => _ProductRow(
-              product: p,
-              quantity: _quantities[p.id] ?? 0,
-              onIncrement: () => _increment(p),
-              onDecrement: () => _decrement(p),
-            )),
+        if (catalog.isEmpty)
+          const EmptyState(
+            icon: Icons.inventory_2_outlined,
+            title: 'لا توجد منتجات في المخزون',
+            subtitle: 'أضف منتجات أولاً من تبويب المخزون لتظهر هنا',
+          )
+        else
+          ...catalog.map((p) => _ProductRow(
+                product: p,
+                quantity: _quantities[p.id] ?? 0,
+                onIncrement: () => _increment(p),
+                onDecrement: () => _decrement(p),
+              )),
       ],
     );
   }
@@ -365,7 +347,7 @@ class _ProductRow extends StatelessWidget {
                           fontSize: 14, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
                   LtrText(
-                    '${Money.format(product.cartonPrice)} أوقية / كرتون',
+                    '${Money.format(product.cartonPrice)} أوقية / كرتون (${product.cartonSize} وحدة)',
                     style: const TextStyle(
                         fontSize: 12, color: AppTheme.textSecondary),
                   ),

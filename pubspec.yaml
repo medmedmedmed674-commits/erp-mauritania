@@ -34,6 +34,9 @@ dependencies:
   pdf: ^3.11.2
   printing: ^5.13.4
 
+  # Saving rendered invoice PNG to disk on mobile/desktop
+  path_provider: ^2.1.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -44,3 +47,12 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/fonts/
+
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo.ttf
+    - family: CairoBold
+      fonts:
+        - asset: assets/fonts/Cairo-Bold.ttf

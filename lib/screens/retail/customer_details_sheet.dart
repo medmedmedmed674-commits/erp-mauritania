@@ -11,6 +11,17 @@ import '../../widgets/shared_widgets.dart';
 /// Bottom sheet that shows the full customer profile + their invoice
 /// history + a "Record Payment" flow that subtracts a payment from the
 /// outstanding debt.
+///
+/// ## Implementation note
+/// Previously this used a `DraggableScrollableSheet` nested inside a
+/// `showModalBottomSheet` with a transparent background. The
+/// combination produced a white screen because the inner sheet was
+/// never given finite size constraints.
+///
+/// We now use a plain `showModalBottomSheet` with `isScrollControlled:
+/// true` and a single `Container` body sized via `SingleChildScrollView`
+/// — this gives us a proper full-height sheet that scrolls naturally
+/// on all device sizes.
 class CustomerDetailsSheet extends StatefulWidget {
   const CustomerDetailsSheet({super.key, required this.customer});
   final Customer customer;
@@ -25,31 +36,41 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<RetailStore>();
-    final current = store.findCustomer(widget.customer.id) ??
-        widget.customer;
+    final current = store.findCustomer(widget.customer.id) ?? widget.customer;
     final invoices = store.invoicesFor(current.id);
     final shown =
         _showAllInvoices ? invoices : invoices.take(3).toList();
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.85,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, controller) => Container(
+      child: SafeArea(
+        child: Container(
           decoration: const BoxDecoration(
             color: AppTheme.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
-          child: SingleChildScrollView(
-            controller: controller,
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag handle
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppTheme.divider,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ),
+              // Header (avatar + name + close button)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
                   children: [
                     CircleAvatar(
                       radius: 24,
@@ -99,112 +120,123 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                     ),
                   ],
                 ),
-                const Divider(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _MiniStat(
-                        label: 'إجمالي الشراء',
-                        value: current.purchasesLabel,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _MiniStat(
-                        label: 'صافي الربح',
-                        value: current.profitLabel,
-                        color: AppTheme.success,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _MiniStat(
-                        label: 'الدين الحالي',
-                        value: current.debtLabel,
-                        color: current.hasDebt
-                            ? AppTheme.danger
-                            : AppTheme.success,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (current.hasDebt) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.success,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () => _showPaymentDialog(current),
-                      icon: const Icon(Icons.payments_outlined, size: 18),
-                      label: const Text('تسجيل دفعة / تسديد'),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ] else
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.success.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: const [
-                        Icon(Icons.check_circle_outline,
-                            color: AppTheme.success, size: 18),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'لا توجد ديون مستحقة على هذا الزبون',
-                            style: TextStyle(
-                              color: AppTheme.success,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
+              ),
+              const Divider(height: 24),
+              // Scrollable body
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'إجمالي الشراء',
+                              value: current.purchasesLabel,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    const Text('الفواتير',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w800)),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: invoices.isEmpty
-                          ? null
-                          : () => setState(
-                              () => _showAllInvoices = !_showAllInvoices),
-                      icon: Icon(
-                        _showAllInvoices
-                            ? Icons.expand_less
-                            : Icons.expand_more,
-                        size: 18,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'صافي الربح',
+                              value: current.profitLabel,
+                              color: AppTheme.success,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'الدين الحالي',
+                              value: current.debtLabel,
+                              color: current.hasDebt
+                                  ? AppTheme.danger
+                                  : AppTheme.success,
+                            ),
+                          ),
+                        ],
                       ),
-                      label: Text(_showAllInvoices
-                          ? 'عرض أقل'
-                          : 'عرض كافة الفواتير'),
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      if (current.hasDebt) ...[
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.success,
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () => _showPaymentDialog(current),
+                            icon: const Icon(Icons.payments_outlined, size: 18),
+                            label: const Text('تسجيل دفعة / تسديد الدين'),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ] else
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.success.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.check_circle_outline,
+                                  color: AppTheme.success, size: 18),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'لا توجد ديون مستحقة على هذا الزبون',
+                                  style: TextStyle(
+                                    color: AppTheme.success,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Text('الفواتير',
+                              style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w800)),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: invoices.isEmpty
+                                ? null
+                                : () => setState(
+                                    () => _showAllInvoices = !_showAllInvoices),
+                            icon: Icon(
+                              _showAllInvoices
+                                  ? Icons.expand_less
+                                  : Icons.expand_more,
+                              size: 18,
+                            ),
+                            label: Text(_showAllInvoices
+                                ? 'عرض أقل'
+                                : 'عرض كافة الفواتير'),
+                          ),
+                        ],
+                      ),
+                      if (invoices.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: EmptyState(
+                            icon: Icons.receipt_long_outlined,
+                            title: 'لا توجد فواتير سابقة',
+                            subtitle: 'لم يتم تسجيل أي عملية بيع لهذا الزبون بعد',
+                          ),
+                        )
+                      else
+                        ...shown.map((inv) => _InvoiceTile(invoice: inv)),
+                    ],
+                  ),
                 ),
-                if (invoices.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: EmptyState(
-                      icon: Icons.receipt_long_outlined,
-                      title: 'لا توجد فواتير سابقة',
-                      subtitle: 'لم يتم تسجيل أي عملية بيع لهذا الزبون بعد',
-                    ),
-                  )
-                else
-                  ...shown.map((inv) => _InvoiceTile(invoice: inv)),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -389,6 +421,12 @@ Future<void> showCustomerDetails(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
+    // Use a fixed max height so the sheet never collapses to 0 and
+    // produces a white screen.
+    constraints: const BoxConstraints(maxHeight: 600),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
     builder: (_) => CustomerDetailsSheet(customer: customer),
   );
 }

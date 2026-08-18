@@ -136,44 +136,91 @@ class _ExpenseTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppTheme.danger.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: const Icon(Icons.arrow_downward,
-              color: AppTheme.danger, size: 18),
-        ),
-        title: Text(
-          expense.note.isEmpty
-              ? expense.category.arabicLabel
-              : expense.note,
-          style: const TextStyle(
-              fontSize: 14, fontWeight: FontWeight.w700),
-        ),
-        subtitle: Wrap(
-          spacing: 8,
-          children: [
-            Text(expense.category.arabicLabel,
-                style: const TextStyle(
-                    fontSize: 12, color: AppTheme.textSecondary)),
-            LtrText(
-              '${expense.date.day}/${expense.date.month}/${expense.date.year}',
-              style: const TextStyle(
-                  fontSize: 12, color: AppTheme.textSecondary),
+      child: Dismissible(
+        key: ValueKey(expense.id),
+        direction: DismissDirection.startToEnd,
+        confirmDismiss: (direction) async {
+          return await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                title: const Text('حذف المصروف'),
+                content: Text(
+                    'هل تريد حذف مصروف "${expense.category.arabicLabel}" بقيمة ${Money.formatWithCurrency(expense.amount)}؟'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('إلغاء'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.danger,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    child: const Text('حذف'),
+                  ),
+                ],
+              ),
             ),
-          ],
+          );
+        },
+        onDismissed: (_) {
+          final messenger = ScaffoldMessenger.of(context);
+          context.read<RetailStore>().deleteExpense(expense.id);
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('تم حذف المصروف'),
+              backgroundColor: AppTheme.danger,
+            ),
+          );
+        },
+        background: Container(
+          color: AppTheme.danger,
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: const Icon(Icons.delete, color: Colors.white, size: 24),
         ),
-        trailing: LtrText(
-          Money.formatWithCurrency(expense.amount),
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            color: AppTheme.danger,
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppTheme.danger.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.arrow_downward,
+                color: AppTheme.danger, size: 18),
+          ),
+          title: Text(
+            expense.note.isEmpty
+                ? expense.category.arabicLabel
+                : expense.note,
+            style: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          subtitle: Wrap(
+            spacing: 8,
+            children: [
+              Text(expense.category.arabicLabel,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppTheme.textSecondary)),
+              LtrText(
+                '${expense.date.day}/${expense.date.month}/${expense.date.year}',
+                style: const TextStyle(
+                    fontSize: 12, color: AppTheme.textSecondary),
+              ),
+            ],
+          ),
+          trailing: LtrText(
+            Money.formatWithCurrency(expense.amount),
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: AppTheme.danger,
+            ),
           ),
         ),
       ),

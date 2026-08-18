@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../utils/retail_store.dart';
 import '../widgets/adaptive_dashboard_scaffold.dart';
+import 'retail/analytics_tab.dart';
 import 'retail/customers_tab.dart';
 import 'retail/expenses_tab.dart';
 import 'retail/inventory_tab.dart';
@@ -11,12 +12,13 @@ import 'retail/purchases_tab.dart';
 
 /// Module 3 — Retail Store Dashboard (refactored).
 ///
-/// Adaptive 5-tab shell:
+/// Adaptive 6-tab shell:
 /// 1. نقطة البيع (POS) — printable invoices
 /// 2. الزبناء والديون — debt ledger + payment flow
 /// 3. المخزن والمخزون — inventory + add product modal
 /// 4. إدارة المشتريات — WhatsApp order launcher
 /// 5. إدارة المصروفات — operational expense tracking
+/// 6. التحليلات اليومية — date-filtered sales + profit + invoices
 class RetailDashboard extends StatefulWidget {
   const RetailDashboard({super.key, this.businessName = 'مؤسسة النور للتجزئة'});
 
@@ -48,6 +50,10 @@ class _RetailDashboardState extends State<RetailDashboard> {
         label: 'إدارة المصروفات',
         icon: Icons.account_balance_wallet_outlined,
         subtitle: 'المصاريف التشغيلية'),
+    DashboardTab(
+        label: 'التحليلات',
+        icon: Icons.analytics_outlined,
+        subtitle: 'ملخص يومي'),
   ];
 
   @override
@@ -68,6 +74,7 @@ class _RetailDashboardState extends State<RetailDashboard> {
             InventoryTab(),
             PurchasesTab(),
             ExpensesTab(),
+            AnalyticsTab(),
           ],
         ),
       ),

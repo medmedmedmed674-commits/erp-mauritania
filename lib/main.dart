@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/welcome_screen.dart';
@@ -40,6 +41,19 @@ class ErpMauritaniaApp extends StatelessWidget {
         title: 'نظام ERP موريتانيا',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
+        // Arabic locale + Material localizations so date pickers, tooltips,
+        // and other framework widgets render with Arabic labels.
+        locale: const Locale('ar', 'MR'),
+        supportedLocales: const [
+          Locale('ar', 'MR'),
+          Locale('ar'),
+          Locale('en', 'US'),
+        ],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         // Force Arabic RTL at the application root so every inherited
         // widget (including dialogs/bottom sheets) respects RTL even on
         // non-Arabic system locales.

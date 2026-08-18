@@ -5,6 +5,7 @@ import '../models/user.dart';
 import '../theme/app_theme.dart';
 import '../utils/auth_state.dart';
 import '../utils/validators.dart';
+import '../widgets/celebration_dialog.dart';
 import '../widgets/responsive.dart';
 import '../widgets/shared_widgets.dart';
 import 'retail_dashboard.dart';
@@ -72,7 +73,7 @@ class _AuthScreenState extends State<AuthScreen>
           password: _loginPassword.text,
           role: widget.role,
         );
-    _routeToDashboard();
+    _showCelebrationAndRoute();
   }
 
   void _submitRegister() {
@@ -85,6 +86,22 @@ class _AuthScreenState extends State<AuthScreen>
           role: widget.role,
           email: _rEmail.text.trim().isEmpty ? null : _rEmail.text.trim(),
         );
+    _showCelebrationAndRoute(isNew: true);
+  }
+
+  Future<void> _showCelebrationAndRoute({bool isNew = false}) async {
+    // Show celebration banner, then route to dashboard once the user
+    // dismisses via the "متابعة" CTA.
+    await showCelebrationDialog(
+      context,
+      title: isNew
+          ? 'مبروك! تم تسجيل حسابك'
+          : 'مرحباً بعودتك!',
+      subtitle: isNew
+          ? 'في نظام ERP موريتانيا'
+          : 'تم تسجيل دخولك بنجاح',
+      onContinue: () => Navigator.of(context).pop(),
+    );
     _routeToDashboard();
   }
 
