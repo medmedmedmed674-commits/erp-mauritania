@@ -1,0 +1,34 @@
+# Flutter / Dart build artifacts
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+**/build/
+.dart_tool/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated platform folders (kept local only when not used)
+# android/ios/linux/macos/windows/web are committed
+
+# Local environment
+.env
+.env.local
+
+# Coverage
+coverage/
+
+# Logs
+*.log
