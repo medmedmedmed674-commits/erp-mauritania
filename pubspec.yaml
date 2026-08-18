@@ -24,6 +24,16 @@ dependencies:
   intl: ^0.19.0
   shared_preferences: ^2.2.3
 
+  # Cross-platform: launch WhatsApp / phone / mail / web URLs
+  url_launcher: ^6.3.1
+
+  # Cross-platform file picker (web + mobile + desktop) for product image upload
+  file_picker: ^8.1.7
+
+  # PDF generation + native print dialog (web + mobile + desktop)
+  pdf: ^3.11.2
+  printing: ^5.13.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

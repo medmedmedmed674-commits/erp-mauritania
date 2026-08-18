@@ -17,8 +17,9 @@ enum ProductCategory {
 }
 
 /// Single product line in either the retail catalogue or the wholesale
-/// stock ledger. `unitPrice` is the retail price, `cartonPrice` is the
-/// wholesale price (per carton of [cartonSize] units).
+/// stock ledger. `unitPrice` is the retail price, `wholesaleCost` is the
+/// purchase cost from the supplier, `cartonPrice` is the wholesale
+/// per-carton price.
 @immutable
 class Product {
   const Product({
@@ -27,18 +28,21 @@ class Product {
     required this.category,
     required this.unitPrice,
     required this.stock,
+    this.wholesaleCost = 0,
     this.cartonPrice = 0,
     this.cartonSize = 12,
     this.batchNumber,
     this.lowStockThreshold = 10,
     this.icon = Icons.inventory_2_outlined,
     this.color = const Color(0xFF1E6FBA),
+    this.imageAsset,
   });
 
   final String id;
   final String name;
   final ProductCategory category;
   final double unitPrice;
+  final double wholesaleCost;
   final int stock;
   final double cartonPrice;
   final int cartonSize;
@@ -46,18 +50,42 @@ class Product {
   final int lowStockThreshold;
   final IconData icon;
   final Color color;
+  final String? imageAsset;
 
   bool get isLowStock => stock <= lowStockThreshold;
 
-  /// Format a Mauritanian MRU price, e.g. "1 250 أوقية".
-  static String formatMRU(double value) {
-    final asInt = value.round();
-    final formatted = asInt.toString().replaceAllMapped(
-      RegExp(r'(\d)(?=(\d{3})+$)'),
-      (m) => '${m[1]} ',
-    );
-    return '$formatted أوقية';
-  }
+  /// Per-unit profit margin (retail price minus wholesale cost).
+  double get unitMargin => unitPrice - wholesaleCost;
+
+  /// Total inventory valuation at retail price.
+  double get stockValue => unitPrice * stock;
+
+  /// Create a copy with overridden fields (used by the Add-Product modal
+  /// when editing an existing line).
+  Product copyWith({
+    String? id,
+    String? name,
+    ProductCategory? category,
+    double? unitPrice,
+    double? wholesaleCost,
+    int? stock,
+    int? lowStockThreshold,
+    IconData? icon,
+    Color? color,
+    String? imageAsset,
+  }) =>
+      Product(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        category: category ?? this.category,
+        unitPrice: unitPrice ?? this.unitPrice,
+        wholesaleCost: wholesaleCost ?? this.wholesaleCost,
+        stock: stock ?? this.stock,
+        lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
+        icon: icon ?? this.icon,
+        color: color ?? this.color,
+        imageAsset: imageAsset ?? this.imageAsset,
+      );
 }
 
 /// A line item inside a cart (POS) or a sale invoice.

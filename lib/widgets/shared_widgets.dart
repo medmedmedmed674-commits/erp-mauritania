@@ -232,14 +232,17 @@ class PrimaryActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final child = Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18),
-        const SizedBox(width: 8),
-        Text(label),
-      ],
+    final child = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 8),
+          Text(label),
+        ],
+      ),
     );
     return SizedBox(
       width: expanded ? double.infinity : null,

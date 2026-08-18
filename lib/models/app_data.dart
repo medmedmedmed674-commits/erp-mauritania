@@ -253,6 +253,7 @@ class AppData {
     Invoice(
       id: 'INV-2026-0042',
       customerId: 'C-001',
+      customerName: 'بقالة السلام',
       date: DateTime(2026, 8, 12),
       total: 18500,
       paid: 0,
@@ -266,10 +267,13 @@ class AppData {
           quantity: 20,
         ),
       ],
+      paymentType: PaymentType.credit,
+      storeName: 'مؤسسة النور للتجزئة',
     ),
     Invoice(
       id: 'INV-2026-0041',
       customerId: 'C-002',
+      customerName: 'مؤسسة الفردوس التجارية',
       date: DateTime(2026, 8, 15),
       total: 42300,
       paid: 0,
@@ -283,10 +287,13 @@ class AppData {
           quantity: 50,
         ),
       ],
+      paymentType: PaymentType.credit,
+      storeName: 'مؤسسة النور للتجزئة',
     ),
     Invoice(
       id: 'INV-2026-0040',
       customerId: 'C-004',
+      customerName: 'سوق النعمة',
       date: DateTime(2026, 8, 10),
       total: 12800,
       paid: 0,
@@ -296,6 +303,8 @@ class AppData {
           quantity: 80,
         ),
       ],
+      paymentType: PaymentType.cash,
+      storeName: 'مؤسسة النور للتجزئة',
     ),
   ];
 }

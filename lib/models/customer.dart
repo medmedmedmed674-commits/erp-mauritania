@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../utils/money.dart';
 import 'product.dart';
 
 /// Customer type for the retail POS checkout flow.
@@ -34,9 +35,24 @@ class Customer {
 
   bool get hasDebt => outstandingDebt > 0;
 
-  String get debtLabel => Product.formatMRU(outstandingDebt);
-  String get profitLabel => Product.formatMRU(totalProfit);
-  String get purchasesLabel => Product.formatMRU(totalPurchases);
+  String get debtLabel => Money.formatWithCurrency(outstandingDebt);
+  String get profitLabel => Money.formatWithCurrency(totalProfit);
+  String get purchasesLabel => Money.formatWithCurrency(totalPurchases);
+
+  /// Returns a new Customer with the given payment subtracted from
+  /// the outstanding debt. Used by the debt-collection flow.
+  Customer applyPayment(double amount) => Customer(
+        id: id,
+        name: name,
+        phone: phone,
+        city: city,
+        outstandingDebt: (outstandingDebt - amount).clamp(0, double.infinity),
+        totalPurchases: totalPurchases,
+        totalProfit: totalProfit,
+        email: email,
+        type: type,
+        lastInvoiceDate: lastInvoiceDate,
+      );
 }
 
 /// A supplier in the import / wholesale flow.
@@ -65,25 +81,48 @@ class Supplier {
   bool get hasPayable => payable > 0;
 }
 
-/// Simplified invoice used in customer ledger views.
+/// Payment type used on POS invoices and customer debt settlement.
+enum PaymentType {
+  cash('نقدي'),
+  card('بطاقة بنكية'),
+  credit('آجل (دين)'),
+  mobileMoney('محفظة إلكترونية');
+
+  const PaymentType(this.arabicLabel);
+  final String arabicLabel;
+}
+
+/// Simplified invoice used in customer ledger views + printable receipts.
 @immutable
 class Invoice {
   const Invoice({
     required this.id,
     required this.customerId,
+    required this.customerName,
     required this.date,
     required this.total,
     required this.paid,
     required this.items,
+    required this.paymentType,
+    required this.storeName,
+    this.customerPhone,
   });
 
   final String id;
   final String customerId;
+  final String customerName;
   final DateTime date;
   final double total;
   final double paid;
   final List<CartLine> items;
+  final PaymentType paymentType;
+  final String storeName;
+  final String? customerPhone;
 
   double get balance => total - paid;
   bool get isSettled => balance <= 0;
+
+  /// Subtotal of all line items before any rounding.
+  double get subtotal =>
+      items.fold(0.0, (s, l) => s + l.lineTotal);
 }

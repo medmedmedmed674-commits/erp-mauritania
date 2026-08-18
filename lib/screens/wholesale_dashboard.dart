@@ -4,6 +4,7 @@ import '../models/app_data.dart';
 import '../models/customer.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
+import '../utils/money.dart';
 import '../widgets/adaptive_dashboard_scaffold.dart';
 import '../widgets/responsive.dart';
 import '../widgets/shared_widgets.dart';
@@ -260,7 +261,7 @@ class _BulkCatalog extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          Product.formatMRU(p.cartonPrice),
+                          Money.formatWithCurrency(p.cartonPrice),
                           style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
@@ -456,7 +457,7 @@ class _BulkCheckout extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          Product.formatMRU(l.lineTotal),
+                          Money.formatWithCurrency(l.lineTotal),
                           style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
@@ -473,7 +474,7 @@ class _BulkCheckout extends StatelessWidget {
             const SizedBox(height: 4),
             _SummaryRow(
                 label: 'الإجمالي',
-                value: Product.formatMRU(total),
+                value: Money.formatWithCurrency(total),
                 bold: true,
                 color: AppTheme.primary),
             const SizedBox(height: 12),
@@ -587,7 +588,7 @@ class _WarehousesSection extends StatelessWidget {
                 icon: Icons.location_on_outlined),
             StatPill(
                 label: 'قيمة المخزون',
-                value: Product.formatMRU(stockValue),
+                value: Money.formatWithCurrency(stockValue),
                 tone: StatTone.success,
                 icon: Icons.savings_outlined),
             const StatPill(
@@ -644,8 +645,8 @@ class _WarehousesSection extends StatelessWidget {
                   DataCell(Text('${p.stock}',
                       style: const TextStyle(fontWeight: FontWeight.w700))),
                   DataCell(Text('${p.stock * p.cartonSize}')),
-                  DataCell(Text(Product.formatMRU(p.cartonPrice))),
-                  DataCell(Text(Product.formatMRU(p.cartonPrice * p.stock),
+                  DataCell(Text(Money.formatWithCurrency(p.cartonPrice))),
+                  DataCell(Text(Money.formatWithCurrency(p.cartonPrice * p.stock),
                       style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           color: AppTheme.primary))),
@@ -737,7 +738,7 @@ class _WarehouseCard extends StatelessWidget {
                         fontSize: 12, color: AppTheme.textSecondary)),
                 const Spacer(),
                 Text(
-                  Product.formatMRU(p.cartonPrice),
+                  Money.formatWithCurrency(p.cartonPrice),
                   style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -784,12 +785,12 @@ class _B2BCustomersSection extends StatelessWidget {
                 icon: Icons.people_outline),
             StatPill(
                 label: 'الديون لك',
-                value: Product.formatMRU(totalDebt),
+                value: Money.formatWithCurrency(totalDebt),
                 tone: StatTone.warning,
                 icon: Icons.account_balance_wallet_outlined),
             StatPill(
                 label: 'صافي الأرباح',
-                value: Product.formatMRU(totalReceivable),
+                value: Money.formatWithCurrency(totalReceivable),
                 tone: StatTone.success,
                 icon: Icons.trending_up),
           ],
@@ -980,12 +981,12 @@ class _SuppliersSection extends StatelessWidget {
                 icon: Icons.public_outlined),
             StatPill(
                 label: 'المستحقات عليك',
-                value: Product.formatMRU(totalPayable),
+                value: Money.formatWithCurrency(totalPayable),
                 tone: StatTone.danger,
                 icon: Icons.account_balance_outlined),
             StatPill(
                 label: 'إجمالي الطلبات',
-                value: Product.formatMRU(totalOrders),
+                value: Money.formatWithCurrency(totalOrders),
                 tone: StatTone.success,
                 icon: Icons.savings_outlined),
           ],
@@ -1042,7 +1043,7 @@ class _SuppliersSection extends StatelessWidget {
                           if (s.hasPayable)
                             StatPill(
                                 label: 'مستحق عليك',
-                                value: Product.formatMRU(s.payable),
+                                value: Money.formatWithCurrency(s.payable),
                                 tone: StatTone.danger,
                                 icon: Icons.priority_high),
                         ],
@@ -1068,13 +1069,13 @@ class _SuppliersSection extends StatelessWidget {
                           Expanded(
                             child: _MiniStat(
                                 label: 'إجمالي الطلبات',
-                                value: Product.formatMRU(s.totalOrders)),
+                                value: Money.formatWithCurrency(s.totalOrders)),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: _MiniStat(
                                 label: 'المستحقات',
-                                value: Product.formatMRU(s.payable),
+                                value: Money.formatWithCurrency(s.payable),
                                 color: s.hasPayable
                                     ? AppTheme.danger
                                     : AppTheme.success),
@@ -1154,7 +1155,7 @@ class _AnalyticsSection extends StatelessWidget {
             children: [
               Expanded(child: _KpiCard(
                 title: 'صافي الأرباح',
-                value: Product.formatMRU(netProfit),
+                value: Money.formatWithCurrency(netProfit),
                 tone: StatTone.success,
                 icon: Icons.trending_up,
                 delta: '+12.4%',
@@ -1162,7 +1163,7 @@ class _AnalyticsSection extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(child: _KpiCard(
                 title: 'الديون لك',
-                value: Product.formatMRU(receivable),
+                value: Money.formatWithCurrency(receivable),
                 tone: StatTone.warning,
                 icon: Icons.account_balance_wallet_outlined,
                 delta: '-3.1%',
@@ -1170,7 +1171,7 @@ class _AnalyticsSection extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(child: _KpiCard(
                 title: 'المستحقات عليك',
-                value: Product.formatMRU(payable),
+                value: Money.formatWithCurrency(payable),
                 tone: StatTone.danger,
                 icon: Icons.account_balance_outlined,
                 delta: '+5.8%',
@@ -1178,7 +1179,7 @@ class _AnalyticsSection extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(child: _KpiCard(
                 title: 'التدفّق النقدي',
-                value: Product.formatMRU(cashFlow),
+                value: Money.formatWithCurrency(cashFlow),
                 tone: StatTone.info,
                 icon: Icons.savings_outlined,
                 delta: '+8.2%',
@@ -1192,28 +1193,28 @@ class _AnalyticsSection extends StatelessWidget {
             children: [
               _KpiCard(
                 title: 'صافي الأرباح',
-                value: Product.formatMRU(netProfit),
+                value: Money.formatWithCurrency(netProfit),
                 tone: StatTone.success,
                 icon: Icons.trending_up,
                 delta: '+12.4%',
               ),
               _KpiCard(
                 title: 'الديون لك',
-                value: Product.formatMRU(receivable),
+                value: Money.formatWithCurrency(receivable),
                 tone: StatTone.warning,
                 icon: Icons.account_balance_wallet_outlined,
                 delta: '-3.1%',
               ),
               _KpiCard(
                 title: 'المستحقات عليك',
-                value: Product.formatMRU(payable),
+                value: Money.formatWithCurrency(payable),
                 tone: StatTone.danger,
                 icon: Icons.account_balance_outlined,
                 delta: '+5.8%',
               ),
               _KpiCard(
                 title: 'التدفّق النقدي',
-                value: Product.formatMRU(cashFlow),
+                value: Money.formatWithCurrency(cashFlow),
                 tone: StatTone.info,
                 icon: Icons.savings_outlined,
                 delta: '+8.2%',
@@ -1422,7 +1423,7 @@ class _MonthlyBarChart extends StatelessWidget {
                                     MainAxisAlignment.end,
                                 children: [
                                   Text(
-                                    Product.formatMRU(
+                                    Money.formatWithCurrency(
                                             e.value.toDouble())
                                         .split(' ')[0],
                                     style: const TextStyle(
@@ -1516,7 +1517,7 @@ class _PayableRank extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(Product.formatMRU(payable),
+            Text(Money.formatWithCurrency(payable),
                 style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w900,

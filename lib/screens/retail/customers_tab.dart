@@ -1,0 +1,177 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../models/customer.dart';
+import '../../theme/app_theme.dart';
+import '../../utils/money.dart';
+import '../../utils/retail_store.dart';
+import '../../widgets/ltr_text.dart';
+import '../../widgets/shared_widgets.dart';
+import 'customer_details_sheet.dart';
+
+/// Tab 2 — Customers & Debt Ledger.
+/// Lists registered customers with their debt balances and a quick
+/// "record payment" action. Tapping a customer opens the full profile.
+class CustomersTab extends StatelessWidget {
+  const CustomersTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<RetailStore>();
+    final customers = store.customers;
+    final totalDebt = store.totalDebt;
+    final totalProfit = store.totalProfit;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionTitle(
+          title: 'إدارة الزبناء والديون',
+          subtitle: 'سجل العملاء، الأرصدة المستحقة، وهامش الربح لكل زبون',
+          icon: Icons.people_alt_outlined,
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            StatPill(
+              label: 'إجمالي العملاء',
+              value: '${customers.length} زبون',
+              tone: StatTone.info,
+              icon: Icons.people_outline,
+            ),
+            StatPill(
+              label: 'إجمالي الديون',
+              value: Money.formatWithCurrency(totalDebt),
+              tone: StatTone.danger,
+              icon: Icons.account_balance_wallet_outlined,
+            ),
+            StatPill(
+              label: 'صافي الأرباح',
+              value: Money.formatWithCurrency(totalProfit),
+              tone: StatTone.success,
+              icon: Icons.trending_up,
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Expanded(
+          child: customers.isEmpty
+              ? const EmptyState(
+                  icon: Icons.person_off_outlined,
+                  title: 'لا يوجد زبناء مسجلون',
+                  subtitle: 'سيظهر هنا كل من تبيع له على الحساب',
+                )
+              : ListView.separated(
+                  itemCount: customers.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) =>
+                      _CustomerCard(customer: customers[i]),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CustomerCard extends StatelessWidget {
+  const _CustomerCard({required this.customer});
+  final Customer customer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => showCustomerDetails(context, customer),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor:
+                    AppTheme.primary.withValues(alpha: 0.12),
+                child: Text(
+                  customer.name.substring(0, 1),
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      customer.name,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        LtrText(customer.phone,
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textSecondary)),
+                        Text('• ${customer.city}',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textSecondary)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (customer.hasDebt)
+                    LtrText(
+                      customer.debtLabel,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.danger,
+                      ),
+                    )
+                  else
+                    const Text('خالص',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.success,
+                            fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 4),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      textStyle: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700),
+                      backgroundColor: customer.hasDebt
+                          ? AppTheme.success
+                          : AppTheme.surfaceAlt,
+                      foregroundColor: customer.hasDebt
+                          ? Colors.white
+                          : AppTheme.textSecondary,
+                    ),
+                    onPressed: () => showCustomerDetails(context, customer),
+                    icon: const Icon(Icons.payments_outlined, size: 14),
+                    label: const Text('تسديد'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
