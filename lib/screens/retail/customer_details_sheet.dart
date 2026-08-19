@@ -12,21 +12,24 @@ import 'invoice_dialog.dart';
 /// history + a "Record Payment" form that subtracts a payment from the
 /// outstanding debt + a "Delete Customer" action.
 ///
-/// ## White-screen fix
-/// Previously this sheet used `showModalBottomSheet` with the default
-/// `useRootNavigator: true`, which mounted the sheet on the root
-/// navigator — **outside** the `ChangeNotifierProvider<RetailStore>`
-/// that lives inside `RetailDashboard.build()`. The subsequent
-/// `context.watch<RetailStore>()` call would silently throw and the
-/// sheet would render as a blank white panel.
+/// ## Robust data fetching
+/// The sheet uses `context.watch<RetailStore>()` and a `StatefulWidget`
+/// lifecycle that re-queries the customer record on every rebuild —
+/// so if the customer is deleted (cascading from another screen), the
+/// sheet automatically closes itself rather than rendering an empty
+/// / blank panel.
 ///
-/// We now pass `useRootNavigator: false` (see [showCustomerDetails])
-/// so the sheet mounts inside the provider tree.
+/// ## Layout
+/// The sheet body is a single scrollable Column (no nested scroll
+/// views that would cause layout overflow):
+///   1. Header — avatar + name + phone + city + close button.
+///   2. 3 Mini Stats — Total Purchases / Net Profit / Current Debt.
+///   3. Payment Form — always visible inline.
+///   4. Delete Customer button.
+///   5. Invoice search filter + scrollable invoice list.
 ///
-/// ## Receipt preview
-/// Tapping any invoice in the history list opens the same
-/// [InvoiceDialog] used by the POS checkout, with working PDF/PNG/Print
-/// actions.
+/// Each invoice row is tappable to open the printable [InvoiceDialog]
+/// with PDF / PNG / Print actions.
 class CustomerDetailsSheet extends StatefulWidget {
   const CustomerDetailsSheet({super.key, required this.customer});
   final Customer customer;
@@ -54,7 +57,8 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
       return;
     }
     if (amount > customer.outstandingDebt) {
-      setState(() => _paymentError = 'المبلغ أكبر من الدين الحالي (${customer.debtLabel})');
+      setState(() =>
+          _paymentError = 'المبلغ أكبر من الدين الحالي (${customer.debtLabel})');
       return;
     }
     // Capture messenger BEFORE the widget tree changes.
@@ -65,8 +69,8 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
     setState(() => _paymentError = null);
     messenger.showSnackBar(
       SnackBar(
-        content: Text(
-            'تم تسجيل دفعة بقيمة ${Money.formatWithCurrency(amount)}'),
+        content:
+            Text('تم تسجيل دفعة بقيمة ${Money.formatWithCurrency(amount)}'),
         backgroundColor: AppTheme.success,
       ),
     );
@@ -128,7 +132,21 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<RetailStore>();
-    final current = store.findCustomer(widget.customer.id) ?? widget.customer;
+    final current = store.findCustomer(widget.customer.id);
+
+    // ── Cascading safety: if the customer was deleted from another
+    // screen, close this sheet immediately so we don't render an
+    // empty / blank panel.
+    if (current == null) {
+      // Use a post-frame callback to close during the next frame
+      // — calling Navigator.pop during build throws.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).maybePop();
+      });
+      // Render a tiny placeholder while we wait for the close.
+      return const SizedBox.shrink();
+    }
+
     final allInvoices = store.invoicesFor(current.id);
 
     // Filter invoices by search query (id or amount contains query).
@@ -168,7 +186,7 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                   ),
                 ),
               ),
-              // Header (avatar + name + close button)
+              // Header (avatar + name + phone + close button)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
@@ -317,8 +335,8 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                                       prefixIcon: Icon(Icons.attach_money,
                                           size: 18),
                                     ),
-                                    onChanged: (_) => setState(
-                                        () => _paymentError = null),
+                                    onChanged: (_) =>
+                                        setState(() => _paymentError = null),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -362,18 +380,16 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                                       .withValues(alpha: 0.4),
                                   width: 1),
                             ),
-                            onPressed: () =>
-                                _confirmDeleteCustomer(current),
-                            icon: const Icon(Icons.delete_outline,
-                                size: 16),
+                            onPressed: () => _confirmDeleteCustomer(current),
+                            icon: const Icon(Icons.delete_outline, size: 16),
                             label: const Text('حذف الزبون'),
                           ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       // ----- Invoice search filter -----
-                      Row(
-                        children: const [
+                      const Row(
+                        children: [
                           Text('الفواتير',
                               style: TextStyle(
                                   fontSize: 15, fontWeight: FontWeight.w800)),

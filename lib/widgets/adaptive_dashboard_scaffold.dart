@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import '../widgets/responsive.dart';
+import 'language_switcher.dart';
+import 'responsive.dart';
 
 /// Adaptive scaffold that switches between a [BottomNavigationBar]
 /// on mobile and a [NavigationRail] / sidebar on tablet + desktop.
@@ -115,6 +116,11 @@ class AdaptiveDashboardScaffold extends StatelessWidget {
         ],
       ),
       actions: [
+        // Language switcher — compact pill (Arabic ⇄ French)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: LanguageSwitcher(compact: true),
+        ),
         IconButton(
           icon: const Icon(Icons.notifications_outlined),
           onPressed: () {},

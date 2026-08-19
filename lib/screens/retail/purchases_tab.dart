@@ -43,8 +43,10 @@ class _PurchasesTabState extends State<PurchasesTab> {
   static const int _defaultCartonSize = 12;
 
   /// Returns the wholesale catalog with derived or user-overridden prices.
-  List<Product> get _catalog {
-    final products = context.read<RetailStore>().products;
+  /// Reads from the active [RetailStore] (called from the build method
+  /// after `context.watch` has subscribed to changes).
+  List<Product> _catalogFromStore(RetailStore store) {
+    final products = store.products;
     return products.map((p) {
       final derivedPrice = p.wholesaleCost > 0
           ? p.wholesaleCost * _defaultCartonSize
@@ -58,12 +60,20 @@ class _PurchasesTabState extends State<PurchasesTab> {
     }).toList();
   }
 
-  double get _total => _quantities.entries.fold(
+  /// Fallback getter that uses [context.read] — kept for legacy
+  /// call sites that haven't been refactored to pass the store.
+  List<Product> get _catalog => _catalogFromStore(context.read<RetailStore>());
+
+  double _totalFor(List<Product> catalog) => _quantities.entries.fold(
         0.0,
-        (s, e) =>
-            s +
-            _catalog.firstWhere((p) => p.id == e.key).cartonPrice * e.value,
+        (s, e) {
+          final match = catalog.where((p) => p.id == e.key).firstOrNull;
+          if (match == null) return s;
+          return s + match.cartonPrice * e.value;
+        },
       );
+
+  double get _total => _totalFor(_catalog);
 
   void _setQty(Product p, int q) {
     setState(() {
@@ -197,7 +207,8 @@ class _PurchasesTabState extends State<PurchasesTab> {
       ..writeln('نرجو تزويدنا بالطلب التالي:')
       ..writeln();
     _quantities.forEach((pid, qty) {
-      final p = _catalog.firstWhere((x) => x.id == pid);
+      final p = _catalog.where((x) => x.id == pid).firstOrNull;
+      if (p == null) return; // cascading-delete safety
       buffer
         ..writeln('• ${p.name}')
         ..writeln('  الكمية: $qty كرتون')
@@ -232,6 +243,28 @@ class _PurchasesTabState extends State<PurchasesTab> {
 
   @override
   Widget build(BuildContext context) {
+    // Watch the store so we rebuild when products change.
+    final store = context.watch<RetailStore>();
+
+    // Cascading-delete hook: prune any quantities entries that point
+    // to product ids removed from the store since the last rebuild.
+    // This prevents the order list from holding references to deleted
+    // products (which would otherwise cause firstWhere to throw).
+    final removed = store.consumeRemovedProductIds();
+    if (removed.isNotEmpty) {
+      // Use a post-frame callback to avoid mutating state during
+      // build — we'll prune in the next frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          for (final id in removed) {
+            _quantities.remove(id);
+            _priceOverrides.remove(id);
+          }
+        });
+      });
+    }
+
     final isWide = context.isDesktop || context.isTablet;
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -344,7 +377,10 @@ class _PurchasesTabState extends State<PurchasesTab> {
               )
             else
               ..._quantities.entries.map((e) {
-                final p = _catalog.firstWhere((x) => x.id == e.key);
+                final p = _catalog.where((x) => x.id == e.key).firstOrNull;
+                if (p == null) {
+                  return const SizedBox.shrink(); // cascading-delete safety
+                }
                 return _SummaryLine(
                   productName: p.name,
                   quantity: e.value,

@@ -99,18 +99,41 @@ class RetailStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Removes a product from the catalogue by id.
-  /// Returns true if a product was removed.
+  /// Set of product ids that have been removed via [deleteProduct]
+  /// since the last call to [consumeRemovedProductIds]. The Purchases
+  /// tab reads this on each rebuild and prunes its quantities map.
+  ///
+  /// This implements a "cascading delete" pattern without coupling
+  /// the store to the tab's internal state — the tab just observes
+  /// what was removed and reconciles.
+  final Set<String> _removedProductIds = <String>{};
+
+  /// Returns the set of product ids that have been removed since the
+  /// last call, then clears the internal buffer. Used by the Purchases
+  /// tab to prune its local quantities map.
+  Set<String> consumeRemovedProductIds() {
+    final copy = Set<String>.of(_removedProductIds);
+    _removedProductIds.clear();
+    return copy;
+  }
+
+  /// Removes a product from the catalogue by id. Also records the id
+  /// in the "removed" set so downstream consumers (e.g. the Purchases
+  /// tab's quantities map) can prune themselves on the next rebuild.
+  ///
+  /// This is the "cascading delete" hook — any widget that holds
+  /// references to product ids should watch [consumeRemovedProductIds]
+  /// and clean up.
   bool deleteProduct(String id) {
     final i = _products.indexWhere((p) => p.id == id);
     if (i == -1) return false;
     _products.removeAt(i);
+    _removedProductIds.add(id);
     notifyListeners();
     return true;
   }
 
-  /// Updates a product in place by id. Used by the edit-product flow
-  /// when we add it in a future iteration.
+  /// Updates a product in place by id. Used by the edit-product flow.
   void updateProduct(Product updated) {
     final i = _products.indexWhere((p) => p.id == updated.id);
     if (i != -1) {

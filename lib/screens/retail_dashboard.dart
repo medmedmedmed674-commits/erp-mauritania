@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../utils/locale_provider.dart';
 import '../utils/retail_store.dart';
 import '../widgets/adaptive_dashboard_scaffold.dart';
 import 'retail/analytics_tab.dart';
@@ -19,6 +20,9 @@ import 'retail/purchases_tab.dart';
 /// 4. إدارة المشتريات — WhatsApp order launcher
 /// 5. إدارة المصروفات — operational expense tracking
 /// 6. التحليلات اليومية — date-filtered sales + profit + invoices
+///
+/// Tab labels are localized — switching Arabic ⇄ French via the
+/// [LanguageSwitcher] in the app bar updates all 6 tab labels live.
 class RetailDashboard extends StatefulWidget {
   const RetailDashboard({super.key, this.businessName = 'مؤسسة النور للتجزئة'});
 
@@ -31,39 +35,51 @@ class RetailDashboard extends StatefulWidget {
 class _RetailDashboardState extends State<RetailDashboard> {
   int _index = 0;
 
-  static const _tabs = [
-    DashboardTab(
-        label: 'نقطة البيع', icon: Icons.point_of_sale, subtitle: 'POS'),
-    DashboardTab(
-        label: 'الزبناء والديون',
-        icon: Icons.people_alt_outlined,
-        subtitle: 'العملاء والمستحقات'),
-    DashboardTab(
-        label: 'المخزن والمخزون',
-        icon: Icons.inventory_2_outlined,
-        subtitle: 'الكميات والتنبيهات'),
-    DashboardTab(
-        label: 'إدارة المشتريات',
-        icon: Icons.shopping_cart_checkout_outlined,
-        subtitle: 'طلب البضاعة'),
-    DashboardTab(
-        label: 'إدارة المصروفات',
-        icon: Icons.account_balance_wallet_outlined,
-        subtitle: 'المصاريف التشغيلية'),
-    DashboardTab(
-        label: 'التحليلات',
-        icon: Icons.analytics_outlined,
-        subtitle: 'ملخص يومي'),
-  ];
+  /// Returns the localized tab list. Rebuilt on every [LocaleProvider]
+  /// notification so labels + subtitles switch language live.
+  List<DashboardTab> _buildTabs(LocaleProvider locale) => [
+        DashboardTab(
+          label: locale.t('retail.tab.pos'),
+          icon: Icons.point_of_sale,
+          subtitle: 'POS',
+        ),
+        DashboardTab(
+          label: locale.t('retail.tab.customers'),
+          icon: Icons.people_alt_outlined,
+          subtitle: locale.t('customers.subtitle'),
+        ),
+        DashboardTab(
+          label: locale.t('retail.tab.inventory'),
+          icon: Icons.inventory_2_outlined,
+          subtitle: locale.t('inventory.subtitle'),
+        ),
+        DashboardTab(
+          label: locale.t('retail.tab.purchases'),
+          icon: Icons.shopping_cart_checkout_outlined,
+          subtitle: locale.t('purchases.subtitle'),
+        ),
+        DashboardTab(
+          label: locale.t('retail.tab.expenses'),
+          icon: Icons.account_balance_wallet_outlined,
+          subtitle: locale.t('expenses.subtitle'),
+        ),
+        DashboardTab(
+          label: locale.t('retail.tab.analytics'),
+          icon: Icons.analytics_outlined,
+          subtitle: locale.t('analytics.subtitle'),
+        ),
+      ];
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LocaleProvider>();
+    final tabs = _buildTabs(locale);
     return ChangeNotifierProvider(
       create: (_) => RetailStore(),
       child: AdaptiveDashboardScaffold(
         title: widget.businessName,
         businessName: widget.businessName,
-        tabs: _tabs,
+        tabs: tabs,
         currentIndex: _index,
         onIndexChanged: (i) => setState(() => _index = i),
         child: IndexedStack(

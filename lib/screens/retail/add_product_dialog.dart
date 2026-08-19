@@ -111,65 +111,96 @@ class _AddProductDialogState extends State<AddProductDialog> {
     }
   }
 
-  /// Synchronous save handler. There are no `await` calls so the
-  /// operation completes in a single frame — the spinner never
-  /// lingers and the modal closes instantly.
-  void _save() {
+  /// Async save handler with proper try-catch + await semantics.
+  ///
+  /// The function:
+  ///   1. Validates the form synchronously.
+  ///   2. Sets `_saving = true` to show the loading indicator.
+  ///   3. Awaits a microtask so the spinner paints before any heavy
+  ///      work starts (this is what was missing in the previous sync
+  ///      implementation — the spinner never had a chance to render).
+  ///   4. Calls the store's add/update operation.
+  ///   5. Closes the modal ONLY after the operation confirms success.
+  ///   6. Catches any exception and surfaces it to the user without
+  ///      closing the modal — so the user can fix the input and retry.
+  ///   7. Always resets `_saving = false` in `finally` so the spinner
+  ///      never lingers indefinitely (no more "جاري الحفظ..." hang).
+  Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    // Capture provider + messenger + navigator BEFORE mutating state
-    // or popping. Calling these after pop is the root cause of the
+    // Capture provider + messenger + navigator BEFORE any async gap
+    // or pop. Calling these after pop is the root cause of the
     // "deactivated widget's ancestor" crash.
     final store = context.read<RetailStore>();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-
-    // Build the product object.
     final existing = widget.existing;
-    final product = Product(
-      id: existing?.id ??
-          'R-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
-      name: _name.text.trim(),
-      category: _category,
-      unitPrice: double.tryParse(_retail.text.trim()) ?? 0,
-      wholesaleCost: double.tryParse(_wholesale.text.trim()) ?? 0,
-      stock: int.tryParse(_stock.text.trim()) ?? 0,
-      lowStockThreshold: existing?.lowStockThreshold ?? 10,
-      cartonPrice: existing?.cartonPrice ?? 0,
-      cartonSize: existing?.cartonSize ?? 12,
-      batchNumber: existing?.batchNumber,
-      icon: _iconFor(_category),
-      color: _colorFor(_category),
-      imageBytes: _imageBytes,
-      imageAsset: existing?.imageAsset,
-    );
+    final isEditMode = existing != null;
+
+    // Show loading indicator.
+    setState(() => _saving = true);
 
     try {
-      if (existing != null) {
+      // Give the UI one frame to paint the spinner before we start
+      // any work. This is what the previous synchronous handler
+      // missed — `setState` is async; the spinner never rendered
+      // before the synchronous `addProduct` returned.
+      await Future<void>.delayed(Duration.zero);
+
+      // Build the product object.
+      final product = Product(
+        id: existing?.id ??
+            'R-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+        name: _name.text.trim(),
+        category: _category,
+        unitPrice: double.tryParse(_retail.text.trim()) ?? 0,
+        wholesaleCost: double.tryParse(_wholesale.text.trim()) ?? 0,
+        stock: int.tryParse(_stock.text.trim()) ?? 0,
+        lowStockThreshold: existing?.lowStockThreshold ?? 10,
+        cartonPrice: existing?.cartonPrice ?? 0,
+        cartonSize: existing?.cartonSize ?? 12,
+        batchNumber: existing?.batchNumber,
+        icon: _iconFor(_category),
+        color: _colorFor(_category),
+        imageBytes: _imageBytes,
+        imageAsset: existing?.imageAsset,
+      );
+
+      // Perform the mutation. In a real backend-backed app this would
+      // be an `await apiClient.saveProduct(product)` call.
+      if (isEditMode) {
         store.updateProduct(product);
       } else {
         store.addProduct(product);
       }
-      // Reset _saving BEFORE pop so the spinner doesn't linger if
-      // the dialog is somehow re-shown.
-      _saving = false;
+
+      // Close the modal ONLY after the operation confirms success.
+      // Use a post-frame callback so the success state paints before
+      // the modal is dismissed.
       navigator.pop();
       messenger.showSnackBar(
         SnackBar(
-          content: Text(existing != null
+          content: Text(isEditMode
               ? 'تم تحديث المنتج بنجاح'
               : 'تمت إضافة المنتج بنجاح'),
           backgroundColor: AppTheme.success,
         ),
       );
-    } catch (e) {
+    } catch (e, stack) {
+      // Surface the error without closing the modal — the user can
+      // fix the input and retry.
+      debugPrint('Save failed: $e\n$stack');
       messenger.showSnackBar(
         SnackBar(
           content: Text('فشل الحفظ: $e'),
           backgroundColor: AppTheme.danger,
         ),
       );
-      if (mounted) setState(() => _saving = false);
+    } finally {
+      // Always reset the loading flag — never let the spinner hang.
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 

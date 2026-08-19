@@ -6,13 +6,14 @@ import 'package:provider/provider.dart';
 import 'screens/welcome_screen.dart';
 import 'theme/app_theme.dart';
 import 'utils/auth_state.dart';
+import 'utils/locale_provider.dart';
 
 /// Application entry point.
 ///
 /// Configures edge-to-edge display, RTL Arabic directionality, and the
-/// shared app theme + auth state provider. All routes are declared
-/// in [_router] so the welcome → auth → dashboard flow is wired
-/// in a single discoverable place.
+/// shared app theme + auth state + locale provider. All routes are
+/// declared in [_router] so the welcome → auth → dashboard flow is
+/// wired in a single discoverable place.
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // Force edge-to-edge so the app fills the screen on all platforms
@@ -36,33 +37,40 @@ class ErpMauritaniaApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthState>(create: (_) => AuthState()),
-      ],
-      child: MaterialApp(
-        title: 'نظام ERP موريتانيا',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
-        // Arabic locale + Material localizations so date pickers, tooltips,
-        // and other framework widgets render with Arabic labels.
-        locale: const Locale('ar', 'MR'),
-        supportedLocales: const [
-          Locale('ar', 'MR'),
-          Locale('ar'),
-          Locale('en', 'US'),
-        ],
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        // Force Arabic RTL at the application root so every inherited
-        // widget (including dialogs/bottom sheets) respects RTL even on
-        // non-Arabic system locales.
-        builder: (context, child) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: child!,
+        ChangeNotifierProvider<LocaleProvider>(
+          create: (_) => LocaleProvider(initial: AppLanguage.arabic),
         ),
-        initialRoute: WelcomeScreen.route,
-        onGenerateRoute: _router,
+      ],
+      child: Consumer<LocaleProvider>(
+        builder: (context, locale, _) {
+          return MaterialApp(
+            title: locale.t('app.title'),
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light,
+            // Locale is driven by the LocaleProvider so the
+            // LanguageSwitcher can flip the whole app at runtime.
+            locale: locale.locale,
+            supportedLocales: const [
+              Locale('ar', 'MR'),
+              Locale('ar'),
+              Locale('fr', 'FR'),
+              Locale('en', 'US'),
+            ],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            // Directionality is driven by the LocaleProvider so
+            // switching to French flips the layout to LTR automatically.
+            builder: (context, child) => Directionality(
+              textDirection: locale.textDirection,
+              child: child!,
+            ),
+            initialRoute: WelcomeScreen.route,
+            onGenerateRoute: _router,
+          );
+        },
       ),
     );
   }

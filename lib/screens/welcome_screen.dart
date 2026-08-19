@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/user.dart';
 import '../theme/app_theme.dart';
+import '../utils/locale_provider.dart';
+import '../widgets/language_switcher.dart';
 import '../widgets/responsive.dart';
 import '../widgets/shared_widgets.dart';
 import 'auth_screen.dart';
@@ -21,6 +24,11 @@ import 'auth_screen.dart';
 /// The body content uses [AnimatedSwitcher] + [TweenAnimationBuilder]
 /// chains so the cards fade in and slide up from below the moment the
 /// welcome screen mounts — giving the splash a fresh, alive feel.
+///
+/// ## Localization
+/// The screen reads the active [LocaleProvider] for both directionality
+/// and translated strings, so toggling Arabic ↔ French updates the
+/// whole screen immediately.
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
@@ -28,25 +36,41 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LocaleProvider>();
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: locale.textDirection,
       child: Scaffold(
         backgroundColor: AppTheme.background,
         body: Responsive(
           builder: (context, device, _) {
-            return CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: BrandedHeader(
-                    icon: Icons.storefront,
-                    title: 'أهلاً وسهلاً بك',
-                    subtitle: 'في نظام الإدارة المتكامل لمؤسستك',
-                    height: device == DeviceType.desktop ? 260 : 220,
-                  ),
+            return Stack(
+              children: [
+                CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: BrandedHeader(
+                        icon: Icons.storefront,
+                        title: locale.t('welcome.greeting'),
+                        subtitle: locale.t('welcome.subtitle'),
+                        height: device == DeviceType.desktop ? 260 : 220,
+                      ),
+                    ),
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _Body(device: device),
+                    ),
+                  ],
                 ),
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _Body(device: device),
+                // Language switcher — top-right corner (top-left in RTL)
+                Positioned(
+                  top: 16,
+                  right: 16,
+                  child: SafeArea(
+                    child: const LanguageSwitcherLarge(
+                      background: Colors.white,
+                      foreground: AppTheme.primary,
+                    ),
+                  ),
                 ),
               ],
             );
@@ -119,6 +143,7 @@ class _BodyState extends State<_Body>
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LocaleProvider>();
     final useRow = widget.device == DeviceType.desktop ||
         (widget.device == DeviceType.tablet &&
             MediaQuery.sizeOf(context).width >= 720);
@@ -168,11 +193,11 @@ class _BodyState extends State<_Body>
                       curve: const Interval(0.0, 0.5, curve: Curves.easeOut)),
                 ),
               ),
-              child: const SlideTransition(
+              child: SlideTransition(
                 position: AlwaysStoppedAnimation(Offset.zero),
                 child: SectionTitle(
-                  title: 'اختر نوع نشاطك التجاري',
-                  subtitle: 'سيتم توجيهك تلقائياً إلى لوحة التحكم المناسبة لنشاطك',
+                  title: locale.t('welcome.choose_role'),
+                  subtitle: locale.t('welcome.choose_role.subtitle'),
                   icon: Icons.account_tree_outlined,
                 ),
               ),
@@ -190,11 +215,10 @@ class _BodyState extends State<_Body>
                               position: offsetRetail,
                               child: _RoleCard(
                                 role: BusinessRole.retail,
-                                title: 'مجمع / متجر تجاري',
-                                englishHint: 'Retail & Supermarket',
-                                description: 'نقطة بيع سريعة، إدارة مخزون وزبناء ومشتريات،'
-                                    ' مناسب للمتاجر الصغيرة والمتوسطة والمجمعات التجارية.',
-                                cta: 'ادخل كتاجر تجزئة',
+                                title: locale.t('welcome.retail.title'),
+                                englishHint: locale.t('welcome.retail.hint'),
+                                description: locale.t('welcome.retail.desc'),
+                                cta: locale.t('welcome.retail.cta'),
                                 tint: BusinessRole.retail.tint,
                                 accentGradient: const [
                                   Color(0xFF1E6FBA),
@@ -219,11 +243,10 @@ class _BodyState extends State<_Body>
                               position: offsetWholesale,
                               child: _RoleCard(
                                 role: BusinessRole.wholesale,
-                                title: 'تاجر جملة / مستودعات وتوزيع',
-                                englishHint: 'Wholesale & Distribution',
-                                description: 'بيع بالجملة، إدارة مخازن متعددة، استيراد وموردين،'
-                                    ' وتحليلات تنفيذية لمؤسسات التوزيع الكبرى.',
-                                cta: 'ادخل كتاجر جملة',
+                                title: locale.t('welcome.wholesale.title'),
+                                englishHint: locale.t('welcome.wholesale.hint'),
+                                description: locale.t('welcome.wholesale.desc'),
+                                cta: locale.t('welcome.wholesale.cta'),
                                 tint: BusinessRole.wholesale.tint,
                                 accentGradient: const [
                                   Color(0xFF6B4FBB),
@@ -249,11 +272,10 @@ class _BodyState extends State<_Body>
                             position: offsetRetail,
                             child: _RoleCard(
                               role: BusinessRole.retail,
-                              title: 'مجمع / متجر تجاري',
-                              englishHint: 'Retail & Supermarket',
-                              description: 'نقطة بيع سريعة، إدارة مخزون وزبناء ومشتريات،'
-                                  ' مناسب للمتاجر الصغيرة والمتوسطة والمجمعات التجارية.',
-                              cta: 'ادخل كتاجر تجزئة',
+                              title: locale.t('welcome.retail.title'),
+                              englishHint: locale.t('welcome.retail.hint'),
+                              description: locale.t('welcome.retail.desc'),
+                              cta: locale.t('welcome.retail.cta'),
                               tint: BusinessRole.retail.tint,
                               accentGradient: const [
                                 Color(0xFF1E6FBA),
@@ -274,11 +296,10 @@ class _BodyState extends State<_Body>
                             position: offsetWholesale,
                             child: _RoleCard(
                               role: BusinessRole.wholesale,
-                              title: 'تاجر جملة / مستودعات وتوزيع',
-                              englishHint: 'Wholesale & Distribution',
-                              description: 'بيع بالجملة، إدارة مخازن متعددة، استيراد وموردين،'
-                                  ' وتحليلات تنفيذية لمؤسسات التوزيع الكبرى.',
-                              cta: 'ادخل كتاجر جملة',
+                              title: locale.t('welcome.wholesale.title'),
+                              englishHint: locale.t('welcome.wholesale.hint'),
+                              description: locale.t('welcome.wholesale.desc'),
+                              cta: locale.t('welcome.wholesale.cta'),
                               tint: BusinessRole.wholesale.tint,
                               accentGradient: const [
                                 Color(0xFF6B4FBB),
@@ -533,6 +554,7 @@ class _SecurityFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LocaleProvider>();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -551,7 +573,7 @@ class _SecurityFooter extends StatelessWidget {
           const SizedBox(width: 8),
           Flexible(
             child: Text(
-              'نظام آمن ومشفّر بالكامل لحماية بياناتك المالية',
+              locale.t('app.security'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: AppTheme.success.withValues(alpha: 0.9),
