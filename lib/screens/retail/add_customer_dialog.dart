@@ -4,20 +4,21 @@ import 'package:provider/provider.dart';
 import '../../models/customer.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/retail_store.dart';
-import '../../utils/validators.dart';
 
 /// Modal form for adding a new customer to the retail ledger.
 ///
-/// Fields: Name, Phone (8-digit Mauritanian), City, optional Email,
-/// and an optional opening debt balance.
-///
-/// ## Provider-safety
-/// The dialog is opened via [showAddCustomerDialog] which passes
-/// `useRootNavigator: false` to `showDialog`. Without this flag the
-/// dialog mounts on the root navigator — outside the
-/// `ChangeNotifierProvider<RetailStore>` that lives inside
-/// `RetailDashboard.build()` — and the subsequent
-/// `context.read<RetailStore>()` would throw `ProviderNotFoundException`.
+/// ## Save flow (no more freeze)
+/// The `_save()` handler:
+///   1. Validates the form synchronously (returns early on error —
+///      no spinner shown so the user sees the validation messages).
+///   2. Sets `_saving = true` → button shows spinner.
+///   3. Awaits one microtask so the spinner paints.
+///   4. Constructs the Customer object from the form fields.
+///   5. Calls `store.addCustomer(customer)` — this is synchronous
+///      for the local state + fires a background DB UPSERT.
+///   6. On success → `navigator.pop()` + success SnackBar.
+///   7. On failure → error SnackBar (modal stays open so user can retry).
+///   8. `finally` → always resets `_saving = false` if still mounted.
 class AddCustomerDialog extends StatefulWidget {
   const AddCustomerDialog({super.key});
 
@@ -56,26 +57,61 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+  // ─── Validation ───────────────────────────────────────────────
+  // Phone: required, at least 8 digits. We're lenient about the
+  // starting digit so we don't block valid numbers the user might
+  // enter. The strict Mauritanian format (starts with 2/3/4) is
+  // enforced only on the auth screen, not here.
+  String? _validatePhone(String? v) {
+    final raw = (v ?? '').trim();
+    if (raw.isEmpty) return 'رقم الهاتف مطلوب';
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 8) return '8 أرقام على الأقل';
+    return null;
+  }
 
-    // Capture provider + messenger + navigator BEFORE any async gap
-    // or pop. Calling these after pop is the root cause of the
-    // "deactivated widget's ancestor" crash.
+  String? _validateEmail(String? v) {
+    final raw = (v ?? '').trim();
+    if (raw.isEmpty) return null; // optional
+    if (!RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(raw)) {
+      return 'صيغة بريد غير صحيحة';
+    }
+    return null;
+  }
+
+  String? _validateDebt(String? v) {
+    final raw = (v ?? '').trim();
+    if (raw.isEmpty) return null; // optional, defaults to 0
+    final n = double.tryParse(raw);
+    if (n == null || n < 0) return 'أدخل قيمة صحيحة';
+    return null;
+  }
+
+  // ─── Save ─────────────────────────────────────────────────────
+  Future<void> _save() async {
+    // 1. Validate — if the form has errors, return WITHOUT showing
+    //    the spinner so the user sees the inline validation messages.
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
+    // 2. Capture everything we need from context BEFORE any await.
+    //    After `await`, the widget may have been disposed if the
+    //    user navigates away.
     final store = context.read<RetailStore>();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
-    // Show loading indicator.
+    // 3. Show the loading spinner.
     setState(() => _saving = true);
 
     try {
-      // Give the UI one frame to paint the spinner before we start
-      // any work. Without this, the synchronous addCustomer returns
-      // before the spinner ever renders — which is what the user
-      // experiences as a "frozen" button.
+      // 4. Yield one frame so the spinner actually renders before
+      //    we do any work. This is the #1 fix for "frozen button" UX.
       await Future<void>.delayed(Duration.zero);
 
+      // 5. Build the customer from the form fields.
+      final debtText = _debt.text.trim();
       final customer = Customer(
         id:
             'C-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
@@ -83,16 +119,19 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
         phone: _phone.text.trim(),
         city: _selectedCity,
         email: _email.text.trim().isEmpty ? null : _email.text.trim(),
-        outstandingDebt: double.tryParse(_debt.text.trim()) ?? 0,
+        outstandingDebt: debtText.isEmpty ? 0 : (double.tryParse(debtText) ?? 0),
         totalPurchases: 0,
         totalProfit: 0,
         type: CustomerType.registered,
         lastInvoiceDate: null,
       );
-      // addCustomer fires a background UPSERT into the Neon
-      // customers table (see RetailStore._persistCustomer).
+
+      // 6. Persist — addCustomer is synchronous for the local state
+      //    and fires a background DB UPSERT. It never throws to the
+      //    caller; DB errors are surfaced via store.lastError.
       store.addCustomer(customer);
-      // Close the modal ONLY after the operation confirms success.
+
+      // 7. Success → close modal + show confirmation.
       navigator.pop();
       messenger.showSnackBar(
         const SnackBar(
@@ -101,6 +140,7 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
         ),
       );
     } catch (e, stack) {
+      // 8. Failure → show error, keep modal open so user can retry.
       debugPrint('Save customer failed: $e\n$stack');
       messenger.showSnackBar(
         SnackBar(
@@ -109,7 +149,7 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
         ),
       );
     } finally {
-      // Always reset the loading flag — never let the spinner hang.
+      // 9. Always reset the spinner — never hang.
       if (mounted) {
         setState(() => _saving = false);
       }
@@ -137,6 +177,7 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Header
                     Row(
                       children: [
                         Container(
@@ -158,13 +199,17 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.of(context).pop(),
+                          onPressed: _saving
+                              ? null
+                              : () => Navigator.of(context).pop(),
                         ),
                       ],
                     ),
                     const Divider(height: 20),
+                    // Name
                     TextFormField(
                       controller: _name,
+                      textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: 'اسم الزبون',
                         prefixIcon: Icon(Icons.person_outline, size: 20),
@@ -174,19 +219,22 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
                           : null,
                     ),
                     const SizedBox(height: 12),
+                    // Phone
                     TextFormField(
                       controller: _phone,
                       keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
                       textDirection: TextDirection.ltr,
                       textAlign: TextAlign.right,
                       decoration: const InputDecoration(
-                        labelText: 'رقم الهاتف الموريتاني (8 أرقام)',
+                        labelText: 'رقم الهاتف',
                         hintText: '2XXX XXXX',
                         prefixIcon: Icon(Icons.phone_outlined, size: 20),
                       ),
-                      validator: AppValidators.phone,
+                      validator: _validatePhone,
                     ),
                     const SizedBox(height: 12),
+                    // City dropdown
                     DropdownButtonFormField<String>(
                       value: _selectedCity,
                       decoration: const InputDecoration(
@@ -199,22 +247,27 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
                                 child: Text(c),
                               ))
                           .toList(),
-                      onChanged: (v) =>
-                          setState(() => _selectedCity = v ?? _selectedCity),
+                      onChanged: _saving
+                          ? null
+                          : (v) => setState(
+                              () => _selectedCity = v ?? _selectedCity),
                     ),
                     const SizedBox(height: 12),
+                    // Email (optional)
                     TextFormField(
                       controller: _email,
                       keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
                       textDirection: TextDirection.ltr,
                       textAlign: TextAlign.right,
                       decoration: const InputDecoration(
                         labelText: 'البريد الإلكتروني (اختياري)',
                         prefixIcon: Icon(Icons.email_outlined, size: 20),
                       ),
-                      validator: AppValidators.email,
+                      validator: _validateEmail,
                     ),
                     const SizedBox(height: 12),
+                    // Opening debt (optional)
                     TextFormField(
                       controller: _debt,
                       keyboardType: TextInputType.number,
@@ -226,16 +279,10 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
                         prefixIcon: Icon(Icons.account_balance_wallet_outlined,
                             size: 20),
                       ),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return null;
-                        final n = double.tryParse(v);
-                        if (n == null || n < 0) {
-                          return 'أدخل قيمة صحيحة';
-                        }
-                        return null;
-                      },
+                      validator: _validateDebt,
                     ),
                     const SizedBox(height: 20),
+                    // Action buttons
                     Row(
                       children: [
                         Expanded(
@@ -287,9 +334,7 @@ Future<void> showAddCustomerDialog(BuildContext context) {
   );
 }
 
-/// Confirmation dialog for deleting a customer. Returns true if the
-/// user confirmed. Uses `useRootNavigator: false` for the same
-/// provider-safety reason.
+/// Confirmation dialog for deleting a customer.
 Future<bool> confirmDeleteCustomer(
   BuildContext context,
   Customer customer,
