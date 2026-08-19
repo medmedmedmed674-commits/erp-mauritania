@@ -534,6 +534,80 @@ class DatabaseService {
     }
   }
 
+  /// Aggregated analytics for a single day.
+  ///
+  /// Executes real SQL aggregates:
+  ///   SELECT COUNT(*), COALESCE(SUM(total), 0), COALESCE(SUM(paid), 0)
+  ///   FROM invoices WHERE invoice_date >= @start AND invoice_date < @end
+  ///
+  /// Returns a [DayAnalytics] record with [invoiceCount], [totalSales],
+  /// [totalPaid]. The average invoice value can be computed by the
+  /// caller as totalSales / invoiceCount.
+  Future<DbResult<DayAnalytics>> fetchDayAnalytics(DateTime day) async {
+    final ok = await ensureConnected();
+    if (!ok || _connection == null) {
+      return DbResult<DayAnalytics>.failure(_initError ?? 'DB unavailable');
+    }
+    try {
+      final start = DateTime(day.year, day.month, day.day);
+      final end = start.add(const Duration(days: 1));
+      final result = await _connection!.execute(
+        Sql.named(r'''
+        SELECT
+          COUNT(*) AS invoice_count,
+          COALESCE(SUM(total), 0) AS total_sales,
+          COALESCE(SUM(paid), 0) AS total_paid
+        FROM invoices
+        WHERE invoice_date >= @start AND invoice_date < @end
+        '''),
+        parameters: <String, dynamic>{
+          'start': start.toUtc(),
+          'end': end.toUtc(),
+        },
+      );
+      if (result.isEmpty) {
+        return const DbResult<DayAnalytics>.success(
+          DayAnalytics(invoiceCount: 0, totalSales: 0, totalPaid: 0),
+        );
+      }
+      final row = result.first.toColumnMap();
+      return DbResult<DayAnalytics>.success(
+        DayAnalytics(
+          invoiceCount: (row['invoice_count'] as num?)?.toInt() ?? 0,
+          totalSales: (row['total_sales'] as num?)?.toDouble() ?? 0,
+          totalPaid: (row['total_paid'] as num?)?.toDouble() ?? 0,
+        ),
+      );
+    } catch (e, stack) {
+      debugPrint('[DatabaseService] fetchDayAnalytics failed: $e\n$stack');
+      return DbResult<DayAnalytics>.failure('فشل تحميل تحليلات اليوم: $e');
+    }
+  }
+
+  /// Aggregated analytics for a customer — total outstanding debt
+  /// across all customers. Executes:
+  ///   SELECT COALESCE(SUM(outstanding_debt), 0) FROM customers
+  Future<DbResult<double>> fetchTotalOutstandingDebt() async {
+    final ok = await ensureConnected();
+    if (!ok || _connection == null) {
+      return DbResult<double>.failure(_initError ?? 'DB unavailable');
+    }
+    try {
+      final result = await _connection!.execute(
+        Sql.named(
+            r'SELECT COALESCE(SUM(outstanding_debt), 0) AS total_debt FROM customers'),
+      );
+      if (result.isEmpty) return const DbResult<double>.success(0);
+      final row = result.first.toColumnMap();
+      return DbResult<double>.success(
+        (row['total_debt'] as num?)?.toDouble() ?? 0,
+      );
+    } catch (e, stack) {
+      debugPrint('[DatabaseService] fetchTotalOutstandingDebt failed: $e\n$stack');
+      return DbResult<double>.failure('فشل تحميل إجمالي الديون: $e');
+    }
+  }
+
   // ───────────────────────────────────────────────────────────────
   // Row → Model converters (return null on parse failure)
   // ───────────────────────────────────────────────────────────────
@@ -745,4 +819,21 @@ class DatabaseService {
     _connection = null;
     _initialized = false;
   }
+}
+
+/// Aggregated analytics record returned by [DatabaseService.fetchDayAnalytics].
+class DayAnalytics {
+  const DayAnalytics({
+    required this.invoiceCount,
+    required this.totalSales,
+    required this.totalPaid,
+  });
+
+  final int invoiceCount;
+  final double totalSales;
+  final double totalPaid;
+
+  /// Average invoice value (total sales / count). Returns 0 when count == 0.
+  double get averageInvoice =>
+      invoiceCount > 0 ? totalSales / invoiceCount : 0;
 }

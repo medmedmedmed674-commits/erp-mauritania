@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/app_data.dart';
 import '../models/customer.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
+import '../utils/auth_state.dart';
 import '../utils/money.dart';
 import '../widgets/adaptive_dashboard_scaffold.dart';
 import '../widgets/responsive.dart';
@@ -19,9 +21,11 @@ import '../widgets/shared_widgets.dart';
 /// 4. الاستيراد والموردين (Supplier ledger)
 /// 5. التحليلات والتقارير (Executive analytics)
 class WholesaleDashboard extends StatefulWidget {
-  const WholesaleDashboard({super.key, this.businessName = 'مؤسسة النور للجملة'});
+  const WholesaleDashboard({super.key, this.businessName});
 
-  final String businessName;
+  /// Optional fallback business name. When null, the dashboard pulls
+  /// the active user's businessName from [AuthState].
+  final String? businessName;
 
   @override
   State<WholesaleDashboard> createState() => _WholesaleDashboardState();
@@ -53,9 +57,16 @@ class _WholesaleDashboardState extends State<WholesaleDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    // Pull the business name dynamically from the authenticated user
+    // session. Falls back to the widget's businessName parameter only
+    // when no user is logged in.
+    final authUser = context.watch<AuthState>().user;
+    final businessName = authUser?.businessName.isNotEmpty == true
+        ? authUser!.businessName
+        : (widget.businessName ?? '');
     return AdaptiveDashboardScaffold(
-      title: widget.businessName,
-      businessName: widget.businessName,
+      title: businessName,
+      businessName: businessName,
       tabs: _tabs,
       currentIndex: _index,
       onIndexChanged: (i) => setState(() => _index = i),

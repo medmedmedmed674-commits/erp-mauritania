@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../theme/app_theme.dart';
+import '../utils/auth_state.dart';
 import '../utils/locale_provider.dart';
 import '../utils/retail_store.dart';
 import '../widgets/adaptive_dashboard_scaffold.dart';
@@ -30,9 +31,13 @@ import 'retail/purchases_tab.dart';
 /// when a recent DB operation failed. This makes the fallback mode
 /// visible to the user instead of failing silently.
 class RetailDashboard extends StatefulWidget {
-  const RetailDashboard({super.key, this.businessName = 'مؤسسة النور للتجزئة'});
+  const RetailDashboard({super.key, this.businessName});
 
-  final String businessName;
+  /// Optional fallback business name. When null, the dashboard pulls
+  /// the active user's businessName from [AuthState] — this is the
+  /// preferred path so the name is always dynamic and comes from the
+  /// user session / DB rather than being hardcoded.
+  final String? businessName;
 
   @override
   State<RetailDashboard> createState() => _RetailDashboardState();
@@ -79,12 +84,21 @@ class _RetailDashboardState extends State<RetailDashboard> {
   @override
   Widget build(BuildContext context) {
     final locale = context.watch<LocaleProvider>();
+    final auth = context.watch<AuthState>();
     final tabs = _buildTabs(locale);
+
+    // Pull the business name dynamically from the authenticated user
+    // session. Falls back to the widget's businessName parameter only
+    // when no user is logged in (e.g. during development).
+    final businessName = auth.user?.businessName.isNotEmpty == true
+        ? auth.user!.businessName
+        : (widget.businessName ?? '');
+
     return ChangeNotifierProvider(
       create: (_) => RetailStore(),
       child: AdaptiveDashboardScaffold(
-        title: widget.businessName,
-        businessName: widget.businessName,
+        title: businessName,
+        businessName: businessName,
         tabs: tabs,
         currentIndex: _index,
         onIndexChanged: (i) => setState(() => _index = i),

@@ -43,6 +43,7 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
   String _invoiceSearch = '';
   final _paymentController = TextEditingController();
   String? _paymentError;
+  bool _paying = false;
 
   @override
   void dispose() {
@@ -50,7 +51,7 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
     super.dispose();
   }
 
-  void _submitPayment(Customer customer) {
+  Future<void> _submitPayment(Customer customer) async {
     final amount = double.tryParse(_paymentController.text.trim()) ?? 0;
     if (amount <= 0) {
       setState(() => _paymentError = 'أدخل مبلغاً صحيحاً');
@@ -61,19 +62,47 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
           _paymentError = 'المبلغ أكبر من الدين الحالي (${customer.debtLabel})');
       return;
     }
-    // Capture messenger BEFORE the widget tree changes.
+    // Capture messenger + store BEFORE any async gap.
     final messenger = ScaffoldMessenger.of(context);
     final store = context.read<RetailStore>();
-    store.recordPayment(customer.id, amount);
-    _paymentController.clear();
-    setState(() => _paymentError = null);
-    messenger.showSnackBar(
-      SnackBar(
-        content:
-            Text('تم تسجيل دفعة بقيمة ${Money.formatWithCurrency(amount)}'),
-        backgroundColor: AppTheme.success,
-      ),
-    );
+
+    // Show a brief loading state.
+    setState(() {
+      _paymentError = null;
+      _paying = true;
+    });
+
+    try {
+      // Yield one frame so the loading indicator paints.
+      await Future<void>.delayed(Duration.zero);
+
+      // recordPayment computes the new debt locally:
+      //   - If amount == outstandingDebt → new debt = 0 (full settlement)
+      //   - If amount <  outstandingDebt → new debt = old debt - amount
+      // Then fires UPDATE customers SET outstanding_debt = @new WHERE id = @id
+      // into Neon (see RetailStore._persistDebtUpdate).
+      store.recordPayment(customer.id, amount);
+      _paymentController.clear();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+              'تم تسجيل دفعة بقيمة ${Money.formatWithCurrency(amount)}'),
+          backgroundColor: AppTheme.success,
+        ),
+      );
+    } catch (e, stack) {
+      debugPrint('Payment failed: $e\n$stack');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('فشل تسجيل الدفعة: $e'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _paying = false);
+      }
+    }
   }
 
   Future<void> _confirmDeleteCustomer(Customer customer) async {
@@ -348,12 +377,20 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 16),
                                   ),
-                                  onPressed: current.hasDebt
+                                  onPressed: (current.hasDebt && !_paying)
                                       ? () => _submitPayment(current)
                                       : null,
-                                  child: const Text('تأكيد',
-                                      style:
-                                          TextStyle(fontWeight: FontWeight.w800)),
+                                  child: _paying
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white),
+                                        )
+                                      : const Text('تأكيد',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.w800)),
                                 ),
                               ],
                             ),

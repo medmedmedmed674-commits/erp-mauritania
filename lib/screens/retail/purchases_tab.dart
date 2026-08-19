@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/product.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/auth_state.dart';
 import '../../utils/money.dart';
 import '../../utils/retail_store.dart';
 import '../../utils/validators.dart';
@@ -215,10 +216,16 @@ class _PurchasesTabState extends State<PurchasesTab> {
         ..writeln('  السعر: ${Money.format(p.cartonPrice)} أوقية')
         ..writeln();
     });
+    // Pull the store name dynamically from the authenticated user —
+    // never hardcoded.
+    final authUser = context.read<AuthState>().user;
+    final storeName = authUser?.businessName.isNotEmpty == true
+        ? authUser!.businessName
+        : 'متجر التجزئة';
     buffer
       ..writeln('الإجمالي: ${Money.format(_total)} أوقية')
       ..writeln()
-      ..writeln('مع خالص الشكر — مؤسسة النور للتجزئة');
+      ..writeln('مع خالص الشكر — $storeName');
     return buffer.toString();
   }
 

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../models/customer.dart';
 import '../../models/product.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/auth_state.dart';
 import '../../utils/money.dart';
 import '../../utils/retail_store.dart';
 import '../../widgets/ltr_text.dart';
@@ -660,6 +661,12 @@ Future<void> showInvoiceDialog(
   final store = context.read<RetailStore>();
   final total = items.fold(0.0, (s, l) => s + l.lineTotal);
   final now = DateTime.now();
+  // Pull the store name dynamically from the authenticated user's
+  // business name — never hardcoded.
+  final authUser = context.read<AuthState>().user;
+  final storeName = authUser?.businessName.isNotEmpty == true
+      ? authUser!.businessName
+      : 'متجر التجزئة';
   final invoice = Invoice(
     id:
         'INV-${now.year}-${now.millisecondsSinceEpoch.toString().substring(7)}',
@@ -672,7 +679,7 @@ Future<void> showInvoiceDialog(
     paid: paid,
     items: List.of(items),
     paymentType: paymentType,
-    storeName: 'مؤسسة النور للتجزئة',
+    storeName: storeName,
   );
   store.addInvoice(invoice);
   await showDialog<void>(

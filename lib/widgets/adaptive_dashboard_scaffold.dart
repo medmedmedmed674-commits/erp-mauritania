@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../models/user.dart';
 import '../theme/app_theme.dart';
+import '../utils/auth_state.dart';
 import 'language_switcher.dart';
 import 'responsive.dart';
 
@@ -130,13 +133,126 @@ class AdaptiveDashboardScaffold extends StatelessWidget {
           onPressed: () {},
         ),
         const SizedBox(width: 8),
-        CircleAvatar(
-          radius: 16,
-          backgroundColor: AppTheme.accent.withValues(alpha: 0.3),
-          child: const Icon(Icons.person, size: 18, color: Colors.white),
+        // User avatar — tappable to show the logged-in user's profile
+        // info (name, phone, city, business name). Reads from
+        // AuthState so the info is always dynamic.
+        GestureDetector(
+          onTap: () => _showUserProfile(context),
+          child: CircleAvatar(
+            radius: 16,
+            backgroundColor: AppTheme.accent.withValues(alpha: 0.3),
+            child: const Icon(Icons.person, size: 18, color: Colors.white),
+          ),
         ),
         const SizedBox(width: 16),
       ],
+    );
+  }
+
+  /// Shows the logged-in user's profile in a bottom sheet.
+  void _showUserProfile(BuildContext context) {
+    final user = context.read<AuthState>().user;
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: false,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Drag handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.divider,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                CircleAvatar(
+                  radius: 36,
+                  backgroundColor:
+                      AppTheme.primary.withValues(alpha: 0.12),
+                  child: Text(
+                    (user?.ownerName.isNotEmpty == true
+                            ? user!.ownerName
+                            : user?.phone ?? '?')
+                        .substring(0, 1),
+                    style: const TextStyle(
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 24,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  user?.businessName.isNotEmpty == true
+                      ? user!.businessName
+                      : 'حساب المستخدم',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (user?.ownerName.isNotEmpty == true) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    user!.ownerName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary),
+                  ),
+                ],
+                const Divider(height: 24),
+                _profileRow('الهاتف', user?.phone ?? '—'),
+                _profileRow('المدينة', user?.city ?? '—'),
+                _profileRow('النشاط', user?.role.arabicLabel ?? '—'),
+                if (user?.email != null && user!.email!.isNotEmpty)
+                  _profileRow('البريد', user.email!),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  icon: const Icon(Icons.close, size: 16),
+                  label: const Text('إغلاق'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _profileRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.textSecondary,
+                  fontWeight: FontWeight.w700)),
+          const Spacer(),
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w700)),
+        ],
+      ),
     );
   }
 }

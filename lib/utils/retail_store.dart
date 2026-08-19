@@ -57,37 +57,53 @@ class Expense {
 /// show a snackbar.
 class RetailStore extends ChangeNotifier {
   RetailStore() {
-    _products = List.of(AppData.retailProducts);
-    _customers = List.of(AppData.customers);
-    _invoices = List.of(AppData.invoices);
-    _expenses = [
-      Expense(
-        id: 'E-001',
-        category: ExpenseCategory.rent,
-        amount: 25000,
-        date: DateTime(2026, 8, 1),
-        note: 'إيجار المحل لشهر أغسطس',
-      ),
-      Expense(
-        id: 'E-002',
-        category: ExpenseCategory.electricity,
-        amount: 4200,
-        date: DateTime(2026, 8, 5),
-        note: 'فاتورة الكهرباء',
-      ),
-      Expense(
-        id: 'E-003',
-        category: ExpenseCategory.salary,
-        amount: 30000,
-        date: DateTime(2026, 8, 10),
-        note: 'راتب الموظف الشهري',
-      ),
-    ];
+    if (DatabaseService.instance.isAvailable) {
+      // ── DB mode (native builds with NEON_CONNECTION_STRING) ──
+      // Start with EMPTY lists so new/clean accounts load with a fully
+      // zeroed-out state (zero debt, empty invoices, empty products).
+      // The real data is loaded asynchronously from Neon in
+      // _loadFromDatabase().
+      _products = <Product>[];
+      _customers = <Customer>[];
+      _invoices = <Invoice>[];
+      _expenses = <Expense>[];
+    } else {
+      // ── Fallback mode (Flutter Web, or no connection string) ──
+      // Use the in-memory seed data so the app stays demoable on the
+      // Vercel web deployment. A small yellow banner makes this mode
+      // visible to the user.
+      _products = List.of(AppData.retailProducts);
+      _customers = List.of(AppData.customers);
+      _invoices = List.of(AppData.invoices);
+      _expenses = [
+        Expense(
+          id: 'E-001',
+          category: ExpenseCategory.rent,
+          amount: 25000,
+          date: DateTime(2026, 8, 1),
+          note: 'إيجار المحل لشهر أغسطس',
+        ),
+        Expense(
+          id: 'E-002',
+          category: ExpenseCategory.electricity,
+          amount: 4200,
+          date: DateTime(2026, 8, 5),
+          note: 'فاتورة الكهرباء',
+        ),
+        Expense(
+          id: 'E-003',
+          category: ExpenseCategory.salary,
+          amount: 30000,
+          date: DateTime(2026, 8, 10),
+          note: 'راتب الموظف الشهري',
+        ),
+      ];
+    }
 
     // Attempt to load from Neon in the background. On web this is a
     // no-op (DatabaseService.isAvailable returns false). On native
-    // builds it opens the SSL connection and replaces the seed data
-    // with what's in the DB.
+    // builds it opens the SSL connection and populates the lists
+    // with the real DB rows.
     _loadFromDatabase();
   }
 
@@ -107,9 +123,10 @@ class RetailStore extends ChangeNotifier {
   bool get isDbAvailable => DatabaseService.instance.isAvailable;
 
   /// Background loader. On web it's a no-op; on native it opens the
-  /// connection, fetches products/customers/invoices, and replaces
-  /// the seed data with the DB rows. Never throws — errors are
-  /// surfaced via [lastError].
+  /// connection, fetches products/customers/invoices, and populates
+  /// the lists with the real DB rows (even if empty — so a clean
+  /// account loads with a fully zeroed-out state). Never throws —
+  /// errors are surfaced via [lastError].
   Future<void> _loadFromDatabase() async {
     if (!DatabaseService.instance.isAvailable) {
       // Web build, or no connection string — keep using the seed data.
@@ -122,23 +139,20 @@ class RetailStore extends ChangeNotifier {
         notifyListeners();
         return;
       }
-      // Fetch products
+      // Fetch products — always replace, even with an empty list, so a
+      // clean DB account loads with zero products (no mock fallback).
       final productsResult =
           await DatabaseService.instance.fetchProducts();
       if (productsResult.success && productsResult.data != null) {
-        if (productsResult.data!.isNotEmpty) {
-          _products = List.of(productsResult.data!);
-        }
+        _products = List.of(productsResult.data!);
       } else if (!productsResult.success) {
         _lastError = productsResult.error;
       }
-      // Fetch customers
+      // Fetch customers — always replace, even with an empty list.
       final customersResult =
           await DatabaseService.instance.fetchCustomers();
       if (customersResult.success && customersResult.data != null) {
-        if (customersResult.data!.isNotEmpty) {
-          _customers = List.of(customersResult.data!);
-        }
+        _customers = List.of(customersResult.data!);
       } else if (!customersResult.success) {
         _lastError = customersResult.error;
       }
@@ -445,4 +459,48 @@ class RetailStore extends ChangeNotifier {
       .where((inv) =>
           inv.date.year == month.year && inv.date.month == month.month)
       .toList();
+
+  // ----- Async DB-backed analytics -----
+  //
+  // These methods delegate to DatabaseService.fetchDayAnalytics which
+  // executes real SQL aggregates:
+  //   SELECT COUNT(*), COALESCE(SUM(total), 0), COALESCE(SUM(paid), 0)
+  //   FROM invoices WHERE invoice_date >= @start AND invoice_date < @end
+  //
+  // On web (no DB), they return a failure so the caller can fall back
+  // to the in-memory computation.
+
+  /// Fetches real SQL-aggregated analytics for a single day from Neon.
+  /// Returns null on failure (caller falls back to in-memory computation).
+  Future<DayAnalytics?> fetchDayAnalyticsFromDb(DateTime day) async {
+    if (!DatabaseService.instance.isAvailable) return null;
+    try {
+      final r = await DatabaseService.instance.fetchDayAnalytics(day);
+      if (r.success && r.data != null) return r.data;
+      _lastError = r.error;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      _lastError = 'فشل تحميل التحليلات: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Fetches the total outstanding debt across all customers from Neon.
+  /// Returns null on failure.
+  Future<double?> fetchTotalDebtFromDb() async {
+    if (!DatabaseService.instance.isAvailable) return null;
+    try {
+      final r = await DatabaseService.instance.fetchTotalOutstandingDebt();
+      if (r.success && r.data != null) return r.data;
+      _lastError = r.error;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      _lastError = 'فشل تحميل الديون: $e';
+      notifyListeners();
+      return null;
+    }
+  }
 }

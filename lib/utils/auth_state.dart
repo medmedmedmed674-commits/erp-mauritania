@@ -20,16 +20,27 @@ class AuthState extends ChangeNotifier {
   }
 
   /// Login flow used by the auth screen.
+  ///
+  /// In a production deployment this would authenticate against the
+  /// backend and load the real user profile from the `users` table.
+  /// For now, we use the phone number as the identifier and set a
+  /// sensible default business name derived from the phone — the user
+  /// can always edit it later from the profile screen.
+  ///
+  /// IMPORTANT: we do NOT hardcode "مؤسسة النور التجارية" — that was
+  /// the old mock behavior. The business name now comes from the
+  /// registration flow (or is left blank so the dashboard shows a
+  /// placeholder until the user sets it).
   void login({
     required String identifier,
     required String password,
     required BusinessRole role,
   }) {
     _user = AppUser(
-      businessName: 'مؤسسة النور التجارية',
-      ownerName: 'أحمد محمد سيد',
+      businessName: '', // Will be populated from DB / profile edit
+      ownerName: '', // Will be populated from DB / profile edit
       phone: identifier,
-      city: 'نواكشوط',
+      city: '', // Will be populated from DB / profile edit
       role: role,
     );
     notifyListeners();

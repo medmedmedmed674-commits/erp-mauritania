@@ -58,15 +58,27 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
 
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() => _saving = true);
 
+    // Capture provider + messenger + navigator BEFORE any async gap
+    // or pop. Calling these after pop is the root cause of the
+    // "deactivated widget's ancestor" crash.
     final store = context.read<RetailStore>();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
+    // Show loading indicator.
+    setState(() => _saving = true);
+
     try {
+      // Give the UI one frame to paint the spinner before we start
+      // any work. Without this, the synchronous addCustomer returns
+      // before the spinner ever renders — which is what the user
+      // experiences as a "frozen" button.
+      await Future<void>.delayed(Duration.zero);
+
       final customer = Customer(
-        id: 'C-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+        id:
+            'C-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
         name: _name.text.trim(),
         phone: _phone.text.trim(),
         city: _selectedCity,
@@ -77,7 +89,10 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
         type: CustomerType.registered,
         lastInvoiceDate: null,
       );
+      // addCustomer fires a background UPSERT into the Neon
+      // customers table (see RetailStore._persistCustomer).
       store.addCustomer(customer);
+      // Close the modal ONLY after the operation confirms success.
       navigator.pop();
       messenger.showSnackBar(
         const SnackBar(
@@ -85,7 +100,8 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
           backgroundColor: AppTheme.success,
         ),
       );
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('Save customer failed: $e\n$stack');
       messenger.showSnackBar(
         SnackBar(
           content: Text('فشل الحفظ: $e'),
@@ -93,7 +109,10 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _saving = false);
+      // Always reset the loading flag — never let the spinner hang.
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
