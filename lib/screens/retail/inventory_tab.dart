@@ -14,6 +14,12 @@ import 'add_product_dialog.dart';
 /// Shows the live catalogue with category filters + a floating
 /// "Add New Product" button that opens a modal form.
 ///
+/// ## Per-card actions
+/// Each product card has a 3-dots [PopupMenuButton] in the top-right
+/// corner with two actions:
+///   - "تعديل المنتج" → opens [showEditProductDialog] pre-populated.
+///   - "حذف المنتج" → opens a confirmation dialog, then deletes.
+///
 /// ## Bulk delete
 /// Long-press any product to enter selection mode. In selection mode,
 /// each card shows a checkbox; tap to toggle selection. A bulk delete
@@ -67,6 +73,24 @@ class _InventoryTabState extends State<InventoryTab> {
     });
   }
 
+  Future<void> _editProduct(Product product) async {
+    await showEditProductDialog(context, product);
+  }
+
+  Future<void> _deleteSingle(Product product) async {
+    final confirmed = await confirmDeleteProduct(context, product);
+    if (!confirmed || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final store = context.read<RetailStore>();
+    store.deleteProduct(product.id);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('تم حذف "${product.name}"'),
+        backgroundColor: AppTheme.danger,
+      ),
+    );
+  }
+
   Future<void> _confirmBulkDelete() async {
     if (_selected.isEmpty) return;
     final count = _selected.length;
@@ -98,7 +122,6 @@ class _InventoryTabState extends State<InventoryTab> {
     );
     if (confirmed != true) return;
 
-    // Capture messenger + store before mutating.
     final messenger = ScaffoldMessenger.of(context);
     final store = context.read<RetailStore>();
     for (final id in _selected.toList()) {
@@ -112,6 +135,21 @@ class _InventoryTabState extends State<InventoryTab> {
         backgroundColor: AppTheme.danger,
       ),
     );
+  }
+
+  void _onCardTap(Product product) {
+    if (_selectionMode) {
+      _toggleSelection(product.id);
+    }
+    // Tap outside selection mode is a no-op — actions are in the menu.
+  }
+
+  void _onCardLongPress(Product product) {
+    if (!_selectionMode) {
+      _enterSelectionMode(product.id);
+    } else {
+      _toggleSelection(product.id);
+    }
   }
 
   @override
@@ -148,7 +186,6 @@ class _InventoryTabState extends State<InventoryTab> {
                         onPressed: _selected.isEmpty
                             ? null
                             : () => setState(() {
-                                  // Select all currently filtered items
                                   for (final p in _filtered) {
                                     _selected.add(p.id);
                                   }
@@ -178,7 +215,7 @@ class _InventoryTabState extends State<InventoryTab> {
                       const SectionTitle(
                         title: 'المخزن والمخزون',
                         subtitle:
-                            'تتبّع الكميات والتنبيهات والمخزون حسب الفئة — اضغط مطولاً للتحديد المتعدد',
+                            'اضغط على ⋮ للتعديل أو الحذف — اضغط مطولاً للتحديد المتعدد',
                         icon: Icons.inventory_2_outlined,
                       ),
                       const SizedBox(height: 16),
@@ -270,20 +307,10 @@ class _InventoryTabState extends State<InventoryTab> {
                             product: p,
                             selected: _selected.contains(p.id),
                             selectionMode: _selectionMode,
-                            onTap: () {
-                              if (_selectionMode) {
-                                _toggleSelection(p.id);
-                              }
-                            },
-                            onLongPress: () {
-                              if (!_selectionMode) {
-                                _enterSelectionMode(p.id);
-                              } else {
-                                _toggleSelection(p.id);
-                              }
-                            },
-                            onConfirmDelete: () =>
-                                _confirmDeleteSingle(p),
+                            onTap: () => _onCardTap(p),
+                            onLongPress: () => _onCardLongPress(p),
+                            onEdit: () => _editProduct(p),
+                            onDelete: () => _deleteSingle(p),
                           );
                         },
                       ),
@@ -307,48 +334,9 @@ class _InventoryTabState extends State<InventoryTab> {
       ),
     );
   }
-
-  Future<void> _confirmDeleteSingle(Product product) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      useRootNavigator: false,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('تأكيد حذف المنتج'),
-          content: Text(
-              'هل أنت متأكد من حذف "${product.name}"؟ لا يمكن التراجع عن هذه العملية.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('إلغاء'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.danger,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('حذف'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed == true && context.mounted) {
-      final messenger = ScaffoldMessenger.of(context);
-      final store = context.read<RetailStore>();
-      store.deleteProduct(product.id);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('تم حذف "${product.name}"'),
-          backgroundColor: AppTheme.danger,
-        ),
-      );
-    }
-  }
 }
 
+/// A single inventory card with 3-dots action menu.
 class _InventoryCard extends StatelessWidget {
   const _InventoryCard({
     required this.product,
@@ -356,7 +344,8 @@ class _InventoryCard extends StatelessWidget {
     required this.selectionMode,
     required this.onTap,
     required this.onLongPress,
-    required this.onConfirmDelete,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   final Product product;
@@ -364,7 +353,8 @@ class _InventoryCard extends StatelessWidget {
   final bool selectionMode;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
-  final VoidCallback onConfirmDelete;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -485,8 +475,52 @@ class _InventoryCard extends StatelessWidget {
                 ],
               ),
             ),
+            // 3-dots action menu (hidden in selection mode)
+            if (!selectionMode)
+              Positioned(
+                top: 0,
+                left: 0,
+                child: PopupMenuButton<_CardAction>(
+                  icon: const Icon(Icons.more_vert, size: 18),
+                  iconColor: AppTheme.textSecondary,
+                  padding: EdgeInsets.zero,
+                  tooltip: 'خيارات',
+                  onSelected: (action) {
+                    switch (action) {
+                      case _CardAction.edit:
+                        onEdit();
+                      case _CardAction.delete:
+                        onDelete();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: _CardAction.edit,
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit_outlined,
+                              size: 18, color: AppTheme.primary),
+                          SizedBox(width: 8),
+                          Text('تعديل المنتج'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: _CardAction.delete,
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline,
+                              size: 18, color: AppTheme.danger),
+                          SizedBox(width: 8),
+                          Text('حذف المنتج'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )
             // Selection checkbox in selection mode
-            if (selectionMode)
+            else
               Positioned(
                 top: 6,
                 left: 6,
@@ -506,16 +540,6 @@ class _InventoryCard extends StatelessWidget {
                     size: 14,
                     color: Colors.white,
                   ),
-                ),
-              )
-            else
-              Positioned(
-                top: 4,
-                left: 4,
-                child: Icon(
-                  Icons.more_vert,
-                  size: 16,
-                  color: AppTheme.textSecondary.withValues(alpha: 0.4),
                 ),
               ),
           ],
@@ -540,3 +564,5 @@ class _InventoryCard extends StatelessWidget {
     );
   }
 }
+
+enum _CardAction { edit, delete }

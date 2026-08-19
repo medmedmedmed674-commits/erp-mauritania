@@ -8,20 +8,25 @@ import '../../models/product.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/retail_store.dart';
 
-/// Modal form for adding a new product to the retail catalogue.
+/// Modal form for adding OR editing a product in the retail catalogue.
 ///
 /// Fields: Name, Retail Price, Wholesale Cost, Stock, Category, and
 /// an image picker box.
 ///
-/// ## Provider-safety fix (root cause of "Failed to add product")
+/// ## Save flow (no more "جاري الحفظ..." hang)
+/// The save handler is **synchronous** — there are no `await` calls
+/// and no `Future` indirection. The product is constructed, added to
+/// the store, the dialog is popped, and a success snackbar is shown
+/// in a single frame. The `_saving` flag is reset to `false` BEFORE
+/// `pop` so the spinner never lingers.
+///
+/// ## Provider-safety
 /// The dialog is opened via [showAddProductDialog] which passes
 /// `useRootNavigator: false` to `showDialog`. Without this flag the
-/// dialog would be mounted on the **root** navigator, which is
-/// outside the `ChangeNotifierProvider<RetailStore>` that lives
-/// inside `RetailDashboard.build()`. The subsequent
-/// `context.read<RetailStore>()` call would then throw
-/// `ProviderNotFoundException` — which is the exact runtime crash
-/// users were reporting.
+/// dialog would be mounted on the root navigator — outside the
+/// `ChangeNotifierProvider<RetailStore>` that lives inside
+/// `RetailDashboard.build()`. The subsequent `context.read<RetailStore>()`
+/// call would then throw `ProviderNotFoundException`.
 ///
 /// ## Image upload on Flutter Web
 /// The `file_picker` package works on all platforms but its Web
@@ -30,7 +35,12 @@ import '../../utils/retail_store.dart';
 /// call in a defensive `try/catch` and only persist the bytes if
 /// they were successfully read.
 class AddProductDialog extends StatefulWidget {
-  const AddProductDialog({super.key});
+  const AddProductDialog({super.key, this.existing});
+
+  /// When non-null, the dialog opens in "edit" mode: fields are
+  /// pre-populated with the existing product's data, and the save
+  /// button calls `updateProduct` instead of `addProduct`.
+  final Product? existing;
 
   @override
   State<AddProductDialog> createState() => _AddProductDialogState();
@@ -46,6 +56,23 @@ class _AddProductDialogState extends State<AddProductDialog> {
   Uint8List? _imageBytes;
   bool _saving = false;
   String? _imageError;
+
+  bool get _isEditMode => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-populate fields if editing an existing product.
+    final p = widget.existing;
+    if (p != null) {
+      _name.text = p.name;
+      _retail.text = p.unitPrice.toStringAsFixed(0);
+      _wholesale.text = p.wholesaleCost.toStringAsFixed(0);
+      _stock.text = p.stock.toString();
+      _category = p.category;
+      _imageBytes = p.imageBytes;
+    }
+  }
 
   @override
   void dispose() {
@@ -84,37 +111,54 @@ class _AddProductDialogState extends State<AddProductDialog> {
     }
   }
 
-  Future<void> _save() async {
+  /// Synchronous save handler. There are no `await` calls so the
+  /// operation completes in a single frame — the spinner never
+  /// lingers and the modal closes instantly.
+  void _save() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() => _saving = true);
 
-    // Capture provider + messenger + navigator BEFORE any async gap
-    // or pop. Calling context.read / ScaffoldMessenger.of AFTER a pop
-    // is the root cause of the "deactivated widget's ancestor" crash.
+    // Capture provider + messenger + navigator BEFORE mutating state
+    // or popping. Calling these after pop is the root cause of the
+    // "deactivated widget's ancestor" crash.
     final store = context.read<RetailStore>();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
+    // Build the product object.
+    final existing = widget.existing;
+    final product = Product(
+      id: existing?.id ??
+          'R-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+      name: _name.text.trim(),
+      category: _category,
+      unitPrice: double.tryParse(_retail.text.trim()) ?? 0,
+      wholesaleCost: double.tryParse(_wholesale.text.trim()) ?? 0,
+      stock: int.tryParse(_stock.text.trim()) ?? 0,
+      lowStockThreshold: existing?.lowStockThreshold ?? 10,
+      cartonPrice: existing?.cartonPrice ?? 0,
+      cartonSize: existing?.cartonSize ?? 12,
+      batchNumber: existing?.batchNumber,
+      icon: _iconFor(_category),
+      color: _colorFor(_category),
+      imageBytes: _imageBytes,
+      imageAsset: existing?.imageAsset,
+    );
+
     try {
-      final product = Product(
-        id: 'R-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
-        name: _name.text.trim(),
-        category: _category,
-        unitPrice: double.tryParse(_retail.text.trim()) ?? 0,
-        wholesaleCost: double.tryParse(_wholesale.text.trim()) ?? 0,
-        stock: int.tryParse(_stock.text.trim()) ?? 0,
-        lowStockThreshold: 10,
-        icon: _iconFor(_category),
-        color: _colorFor(_category),
-        // Persist the picked image bytes so the inventory grid renders
-        // the user's photo (not just the category icon).
-        imageBytes: _imageBytes,
-      );
-      store.addProduct(product);
+      if (existing != null) {
+        store.updateProduct(product);
+      } else {
+        store.addProduct(product);
+      }
+      // Reset _saving BEFORE pop so the spinner doesn't linger if
+      // the dialog is somehow re-shown.
+      _saving = false;
       navigator.pop();
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('تمت إضافة المنتج بنجاح'),
+        SnackBar(
+          content: Text(existing != null
+              ? 'تم تحديث المنتج بنجاح'
+              : 'تمت إضافة المنتج بنجاح'),
           backgroundColor: AppTheme.success,
         ),
       );
@@ -125,7 +169,6 @@ class _AddProductDialogState extends State<AddProductDialog> {
           backgroundColor: AppTheme.danger,
         ),
       );
-    } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
@@ -183,14 +226,18 @@ class _AddProductDialogState extends State<AddProductDialog> {
                             color: AppTheme.primary.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.add_box_outlined,
-                              color: AppTheme.primary, size: 22),
+                          child: Icon(
+                              _isEditMode
+                                  ? Icons.edit_outlined
+                                  : Icons.add_box_outlined,
+                              color: AppTheme.primary,
+                              size: 22),
                         ),
                         const SizedBox(width: 10),
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            'إضافة منتج جديد',
-                            style: TextStyle(
+                            _isEditMode ? 'تعديل المنتج' : 'إضافة منتج جديد',
+                            style: const TextStyle(
                                 fontSize: 17, fontWeight: FontWeight.w800),
                           ),
                         ),
@@ -228,9 +275,6 @@ class _AddProductDialogState extends State<AddProductDialog> {
                                         height: double.infinity,
                                         errorBuilder:
                                             (context, error, stackTrace) {
-                                          // Defensive: if the bytes
-                                          // somehow can't be decoded,
-                                          // fall back to the placeholder.
                                           return const _ImagePickerPlaceholder();
                                         },
                                       ),
@@ -395,8 +439,13 @@ class _AddProductDialogState extends State<AddProductDialog> {
                                         strokeWidth: 2,
                                         color: Colors.white),
                                   )
-                                : const Icon(Icons.save_outlined, size: 18),
-                            label: const Text('حفظ المنتج'),
+                                : Icon(
+                                    _isEditMode
+                                        ? Icons.check_outlined
+                                        : Icons.save_outlined,
+                                    size: 18),
+                            label: Text(
+                                _isEditMode ? 'حفظ التعديلات' : 'حفظ المنتج'),
                           ),
                         ),
                       ],
@@ -437,7 +486,8 @@ class _ImagePickerPlaceholder extends StatelessWidget {
   }
 }
 
-/// Convenience helper used by the inventory tab.
+/// Convenience helper used by the inventory tab to open the dialog in
+/// "add new" mode.
 ///
 /// **IMPORTANT**: `useRootNavigator: false` is critical — without it,
 /// the dialog mounts on the root navigator and `context.read<RetailStore>()`
@@ -448,4 +498,48 @@ Future<void> showAddProductDialog(BuildContext context) {
     useRootNavigator: false,
     builder: (_) => const AddProductDialog(),
   );
+}
+
+/// Convenience helper used by the inventory tab to open the dialog in
+/// "edit existing" mode. Pre-populates all fields from [existing].
+Future<void> showEditProductDialog(
+    BuildContext context, Product existing) {
+  return showDialog<void>(
+    context: context,
+    useRootNavigator: false,
+    builder: (_) => AddProductDialog(existing: existing),
+  );
+}
+
+/// Confirmation dialog for deleting a product. Returns true if the
+/// user confirmed.
+Future<bool> confirmDeleteProduct(
+    BuildContext context, Product product) async {
+  final result = await showDialog<bool>(
+    context: context,
+    useRootNavigator: false,
+    builder: (dialogContext) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('تأكيد حذف المنتج'),
+        content: Text(
+            'هل أنت متأكد من حذف "${product.name}"؟ لا يمكن التراجع عن هذه العملية.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    ),
+  );
+  return result ?? false;
 }

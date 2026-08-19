@@ -9,8 +9,8 @@ import '../../widgets/ltr_text.dart';
 import 'invoice_dialog.dart';
 
 /// Bottom sheet that shows the full customer profile + their invoice
-/// history + a "Record Payment" flow that subtracts a payment from the
-/// outstanding debt.
+/// history + a "Record Payment" form that subtracts a payment from the
+/// outstanding debt + a "Delete Customer" action.
 ///
 /// ## White-screen fix
 /// Previously this sheet used `showModalBottomSheet` with the default
@@ -38,6 +38,92 @@ class CustomerDetailsSheet extends StatefulWidget {
 class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
   bool _showAllInvoices = false;
   String _invoiceSearch = '';
+  final _paymentController = TextEditingController();
+  String? _paymentError;
+
+  @override
+  void dispose() {
+    _paymentController.dispose();
+    super.dispose();
+  }
+
+  void _submitPayment(Customer customer) {
+    final amount = double.tryParse(_paymentController.text.trim()) ?? 0;
+    if (amount <= 0) {
+      setState(() => _paymentError = 'أدخل مبلغاً صحيحاً');
+      return;
+    }
+    if (amount > customer.outstandingDebt) {
+      setState(() => _paymentError = 'المبلغ أكبر من الدين الحالي (${customer.debtLabel})');
+      return;
+    }
+    // Capture messenger BEFORE the widget tree changes.
+    final messenger = ScaffoldMessenger.of(context);
+    final store = context.read<RetailStore>();
+    store.recordPayment(customer.id, amount);
+    _paymentController.clear();
+    setState(() => _paymentError = null);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+            'تم تسجيل دفعة بقيمة ${Money.formatWithCurrency(amount)}'),
+        backgroundColor: AppTheme.success,
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteCustomer(Customer customer) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      useRootNavigator: false,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تأكيد حذف الزبون'),
+          content: Text(
+              'هل أنت متأكد من حذف "${customer.name}"؟ سيتم حذفه نهائياً من السجل.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.danger,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final store = context.read<RetailStore>();
+    store.deleteCustomer(customer.id);
+    navigator.pop();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('تم حذف "${customer.name}"'),
+        backgroundColor: AppTheme.danger,
+      ),
+    );
+  }
+
+  void _showReceipt(Invoice invoice) {
+    showDialog<void>(
+      context: context,
+      useRootNavigator: false,
+      builder: (_) => InvoiceDialog(
+        invoice: invoice,
+        customerName: invoice.customerName,
+        customerPhone: invoice.customerPhone,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -146,6 +232,7 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Customer info row
                       Row(
                         children: [
                           Expanded(
@@ -175,45 +262,114 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      if (current.hasDebt) ...[
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.success,
-                              foregroundColor: Colors.white,
-                            ),
-                            onPressed: () => _showPaymentDialog(current),
-                            icon: const Icon(Icons.payments_outlined, size: 18),
-                            label: const Text('تسديد الدين'),
+                      // Payment form (always visible — no button to open it)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceAlt,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: current.hasDebt
+                                ? AppTheme.danger.withValues(alpha: 0.25)
+                                : AppTheme.divider,
+                            width: 1,
                           ),
                         ),
-                        const SizedBox(height: 16),
-                      ] else
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppTheme.success.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.check_circle_outline,
-                                  color: AppTheme.success, size: 18),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'لا توجد ديون مستحقة على هذا الزبون',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.payments_outlined,
+                                    size: 18, color: AppTheme.primary),
+                                const SizedBox(width: 8),
+                                const Text('تسديد الدين',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800)),
+                                const Spacer(),
+                                Text(
+                                  'الدين: ${current.debtLabel}',
                                   style: TextStyle(
-                                    color: AppTheme.success,
+                                    fontSize: 12,
+                                    color: current.hasDebt
+                                        ? AppTheme.danger
+                                        : AppTheme.success,
                                     fontWeight: FontWeight.w700,
-                                    fontSize: 13,
                                   ),
                                 ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _paymentController,
+                                    keyboardType: TextInputType.number,
+                                    textDirection: TextDirection.ltr,
+                                    textAlign: TextAlign.right,
+                                    decoration: const InputDecoration(
+                                      labelText: 'مبلغ الدفعة (أوقية)',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
+                                      prefixIcon: Icon(Icons.attach_money,
+                                          size: 18),
+                                    ),
+                                    onChanged: (_) => setState(
+                                        () => _paymentError = null),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.success,
+                                    foregroundColor: Colors.white,
+                                    minimumSize: const Size(48, 44),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16),
+                                  ),
+                                  onPressed: current.hasDebt
+                                      ? () => _submitPayment(current)
+                                      : null,
+                                  child: const Text('تأكيد',
+                                      style:
+                                          TextStyle(fontWeight: FontWeight.w800)),
+                                ),
+                              ],
+                            ),
+                            if (_paymentError != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                _paymentError!,
+                                style: const TextStyle(
+                                    color: AppTheme.danger, fontSize: 11),
                               ),
                             ],
-                          ),
+                          ],
                         ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Action row: Delete customer
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.danger,
+                              side: BorderSide(
+                                  color: AppTheme.danger
+                                      .withValues(alpha: 0.4),
+                                  width: 1),
+                            ),
+                            onPressed: () =>
+                                _confirmDeleteCustomer(current),
+                            icon: const Icon(Icons.delete_outline,
+                                size: 16),
+                            label: const Text('حذف الزبون'),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 16),
                       // ----- Invoice search filter -----
                       Row(
@@ -229,8 +385,7 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                             setState(() => _invoiceSearch = v),
                         decoration: const InputDecoration(
                           hintText: 'ابحث برقم الفاتورة أو المبلغ…',
-                          prefixIcon:
-                              Icon(Icons.search, size: 18),
+                          prefixIcon: Icon(Icons.search, size: 18),
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(
                               horizontal: 12, vertical: 10),
@@ -279,90 +434,6 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
           ),
         ),
       ),
-    );
-  }
-
-  /// Re-opens the printable [InvoiceDialog] for a past invoice.
-  void _showReceipt(Invoice invoice) {
-    showDialog<void>(
-      context: context,
-      useRootNavigator: false,
-      builder: (_) => InvoiceDialog(
-        invoice: invoice,
-        customerName: invoice.customerName,
-        customerPhone: invoice.customerPhone,
-      ),
-    );
-  }
-
-  void _showPaymentDialog(Customer c) {
-    final controller = TextEditingController();
-    showDialog<void>(
-      context: context,
-      useRootNavigator: false,
-      builder: (dialogContext) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            title: const Text('تسجيل دفعة'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('الزبون: ${c.name}',
-                    style: const TextStyle(
-                        fontSize: 13, color: AppTheme.textSecondary)),
-                const SizedBox(height: 4),
-                Text('الدين الحالي: ${c.debtLabel}',
-                    style: const TextStyle(
-                        fontSize: 13, color: AppTheme.textSecondary)),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  textDirection: TextDirection.ltr,
-                  textAlign: TextAlign.right,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: 'مبلغ الدفعة (أوقية)',
-                    prefixIcon: Icon(Icons.payments_outlined, size: 20),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('إلغاء'),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.success,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  final amount =
-                      double.tryParse(controller.text.trim()) ?? 0;
-                  if (amount <= 0) return;
-                  // Capture messenger BEFORE pop.
-                  final messenger = ScaffoldMessenger.of(dialogContext);
-                  final store = context.read<RetailStore>();
-                  store.recordPayment(c.id, amount);
-                  Navigator.of(dialogContext).pop();
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          'تم تسجيل دفعة بقيمة ${Money.formatWithCurrency(amount)}'),
-                      backgroundColor: AppTheme.success,
-                    ),
-                  );
-                },
-                child: const Text('تأكيد الدفعة'),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }
@@ -417,8 +488,7 @@ class _EmptyInvoicesCard extends StatelessWidget {
         child: Column(
           children: const [
             Icon(Icons.receipt_long_outlined,
-                size: 36,
-                color: AppTheme.textSecondary),
+                size: 36, color: AppTheme.textSecondary),
             SizedBox(height: 8),
             Text('لا توجد فواتير مطابقة',
                 style: TextStyle(
