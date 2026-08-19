@@ -6,22 +6,27 @@ import '../../theme/app_theme.dart';
 import '../../utils/money.dart';
 import '../../utils/retail_store.dart';
 import '../../widgets/ltr_text.dart';
-import '../../widgets/shared_widgets.dart';
+import 'invoice_dialog.dart';
 
 /// Bottom sheet that shows the full customer profile + their invoice
 /// history + a "Record Payment" flow that subtracts a payment from the
 /// outstanding debt.
 ///
-/// ## Implementation note
-/// Previously this used a `DraggableScrollableSheet` nested inside a
-/// `showModalBottomSheet` with a transparent background. The
-/// combination produced a white screen because the inner sheet was
-/// never given finite size constraints.
+/// ## White-screen fix
+/// Previously this sheet used `showModalBottomSheet` with the default
+/// `useRootNavigator: true`, which mounted the sheet on the root
+/// navigator — **outside** the `ChangeNotifierProvider<RetailStore>`
+/// that lives inside `RetailDashboard.build()`. The subsequent
+/// `context.watch<RetailStore>()` call would silently throw and the
+/// sheet would render as a blank white panel.
 ///
-/// We now use a plain `showModalBottomSheet` with `isScrollControlled:
-/// true` and a single `Container` body sized via `SingleChildScrollView`
-/// — this gives us a proper full-height sheet that scrolls naturally
-/// on all device sizes.
+/// We now pass `useRootNavigator: false` (see [showCustomerDetails])
+/// so the sheet mounts inside the provider tree.
+///
+/// ## Receipt preview
+/// Tapping any invoice in the history list opens the same
+/// [InvoiceDialog] used by the POS checkout, with working PDF/PNG/Print
+/// actions.
 class CustomerDetailsSheet extends StatefulWidget {
   const CustomerDetailsSheet({super.key, required this.customer});
   final Customer customer;
@@ -32,14 +37,24 @@ class CustomerDetailsSheet extends StatefulWidget {
 
 class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
   bool _showAllInvoices = false;
+  String _invoiceSearch = '';
 
   @override
   Widget build(BuildContext context) {
     final store = context.watch<RetailStore>();
     final current = store.findCustomer(widget.customer.id) ?? widget.customer;
-    final invoices = store.invoicesFor(current.id);
-    final shown =
-        _showAllInvoices ? invoices : invoices.take(3).toList();
+    final allInvoices = store.invoicesFor(current.id);
+
+    // Filter invoices by search query (id or amount contains query).
+    final invoices = _invoiceSearch.trim().isEmpty
+        ? allInvoices
+        : allInvoices
+            .where((inv) =>
+                inv.id.toLowerCase().contains(_invoiceSearch.toLowerCase()) ||
+                Money.format(inv.total).contains(_invoiceSearch))
+            .toList();
+
+    final shown = _showAllInvoices ? invoices : invoices.take(3).toList();
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -77,7 +92,9 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                       backgroundColor:
                           AppTheme.primary.withValues(alpha: 0.12),
                       child: Text(
-                        current.name.substring(0, 1),
+                        current.name.isNotEmpty
+                            ? current.name.substring(0, 1)
+                            : '?',
                         style: const TextStyle(
                           color: AppTheme.primary,
                           fontWeight: FontWeight.w800,
@@ -168,7 +185,7 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                             ),
                             onPressed: () => _showPaymentDialog(current),
                             icon: const Icon(Icons.payments_outlined, size: 18),
-                            label: const Text('تسجيل دفعة / تسديد الدين'),
+                            label: const Text('تسديد الدين'),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -198,40 +215,62 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                           ),
                         ),
                       const SizedBox(height: 16),
+                      // ----- Invoice search filter -----
                       Row(
-                        children: [
-                          const Text('الفواتير',
+                        children: const [
+                          Text('الفواتير',
                               style: TextStyle(
                                   fontSize: 15, fontWeight: FontWeight.w800)),
-                          const Spacer(),
-                          TextButton.icon(
-                            onPressed: invoices.isEmpty
-                                ? null
-                                : () => setState(
-                                    () => _showAllInvoices = !_showAllInvoices),
-                            icon: Icon(
-                              _showAllInvoices
-                                  ? Icons.expand_less
-                                  : Icons.expand_more,
-                              size: 18,
-                            ),
-                            label: Text(_showAllInvoices
-                                ? 'عرض أقل'
-                                : 'عرض كافة الفواتير'),
-                          ),
                         ],
                       ),
-                      if (invoices.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
-                          child: EmptyState(
-                            icon: Icons.receipt_long_outlined,
-                            title: 'لا توجد فواتير سابقة',
-                            subtitle: 'لم يتم تسجيل أي عملية بيع لهذا الزبون بعد',
+                      const SizedBox(height: 8),
+                      TextField(
+                        onChanged: (v) =>
+                            setState(() => _invoiceSearch = v),
+                        decoration: const InputDecoration(
+                          hintText: 'ابحث برقم الفاتورة أو المبلغ…',
+                          prefixIcon:
+                              Icon(Icons.search, size: 18),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Text(
+                            '${invoices.length} فاتورة',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textSecondary,
+                                fontWeight: FontWeight.w700),
                           ),
-                        )
+                          const Spacer(),
+                          if (allInvoices.length > 3)
+                            TextButton.icon(
+                              onPressed: () => setState(() =>
+                                  _showAllInvoices = !_showAllInvoices),
+                              icon: Icon(
+                                _showAllInvoices
+                                    ? Icons.expand_less
+                                    : Icons.expand_more,
+                                size: 18,
+                              ),
+                              label: Text(_showAllInvoices
+                                  ? 'عرض أقل'
+                                  : 'عرض كافة الفواتير'),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (invoices.isEmpty)
+                        const _EmptyInvoicesCard()
                       else
-                        ...shown.map((inv) => _InvoiceTile(invoice: inv)),
+                        ...shown.map((inv) => _InvoiceTile(
+                              invoice: inv,
+                              onTap: () => _showReceipt(inv),
+                            )),
                     ],
                   ),
                 ),
@@ -243,10 +282,24 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
     );
   }
 
+  /// Re-opens the printable [InvoiceDialog] for a past invoice.
+  void _showReceipt(Invoice invoice) {
+    showDialog<void>(
+      context: context,
+      useRootNavigator: false,
+      builder: (_) => InvoiceDialog(
+        invoice: invoice,
+        customerName: invoice.customerName,
+        customerPhone: invoice.customerPhone,
+      ),
+    );
+  }
+
   void _showPaymentDialog(Customer c) {
     final controller = TextEditingController();
     showDialog<void>(
       context: context,
+      useRootNavigator: false,
       builder: (dialogContext) {
         return Directionality(
           textDirection: TextDirection.rtl,
@@ -269,6 +322,7 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                   keyboardType: TextInputType.number,
                   textDirection: TextDirection.ltr,
                   textAlign: TextAlign.right,
+                  autofocus: true,
                   decoration: const InputDecoration(
                     labelText: 'مبلغ الدفعة (أوقية)',
                     prefixIcon: Icon(Icons.payments_outlined, size: 20),
@@ -290,9 +344,12 @@ class _CustomerDetailsSheetState extends State<CustomerDetailsSheet> {
                   final amount =
                       double.tryParse(controller.text.trim()) ?? 0;
                   if (amount <= 0) return;
-                  context.read<RetailStore>().recordPayment(c.id, amount);
+                  // Capture messenger BEFORE pop.
+                  final messenger = ScaffoldMessenger.of(dialogContext);
+                  final store = context.read<RetailStore>();
+                  store.recordPayment(c.id, amount);
                   Navigator.of(dialogContext).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(
                       content: Text(
                           'تم تسجيل دفعة بقيمة ${Money.formatWithCurrency(amount)}'),
@@ -349,64 +406,25 @@ class _MiniStat extends StatelessWidget {
   }
 }
 
-class _InvoiceTile extends StatelessWidget {
-  const _InvoiceTile({required this.invoice});
-  final Invoice invoice;
+class _EmptyInvoicesCard extends StatelessWidget {
+  const _EmptyInvoicesCard();
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Icon(Icons.receipt_outlined,
-              color: AppTheme.primary, size: 18),
-        ),
-        title: Row(
-          children: [
-            LtrText(invoice.id,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w800)),
-            const SizedBox(width: 8),
-            LtrText(
-              '${invoice.date.day}/${invoice.date.month}/${invoice.date.year}',
-              style: const TextStyle(
-                  fontSize: 11, color: AppTheme.textSecondary),
-            ),
-          ],
-        ),
-        subtitle: Text(
-          '${invoice.items.length} صنف • ${invoice.paymentType.arabicLabel}',
-          style: const TextStyle(
-              fontSize: 12, color: AppTheme.textSecondary),
-        ),
-        trailing: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            LtrText(
-              Money.formatWithCurrency(invoice.total),
-              style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.primary),
-            ),
-            const SizedBox(height: 2),
-            invoice.isSettled
-                ? const Text('خالص',
-                    style: TextStyle(
-                        fontSize: 10, color: AppTheme.success))
-                : LtrText(
-                    'متبقي: ${Money.format(invoice.balance)}',
-                    style: const TextStyle(
-                        fontSize: 10, color: AppTheme.danger),
-                  ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: const [
+            Icon(Icons.receipt_long_outlined,
+                size: 36,
+                color: AppTheme.textSecondary),
+            SizedBox(height: 8),
+            Text('لا توجد فواتير مطابقة',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.textSecondary,
+                    fontWeight: FontWeight.w700)),
           ],
         ),
       ),
@@ -414,15 +432,97 @@ class _InvoiceTile extends StatelessWidget {
   }
 }
 
+class _InvoiceTile extends StatelessWidget {
+  const _InvoiceTile({required this.invoice, required this.onTap});
+  final Invoice invoice;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.receipt_outlined,
+                color: AppTheme.primary, size: 18),
+          ),
+          title: Row(
+            children: [
+              LtrText(invoice.id,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w800)),
+              const SizedBox(width: 8),
+              LtrText(
+                '${invoice.date.day}/${invoice.date.month}/${invoice.date.year}',
+                style: const TextStyle(
+                    fontSize: 11, color: AppTheme.textSecondary),
+              ),
+            ],
+          ),
+          subtitle: Text(
+            '${invoice.items.length} صنف • ${invoice.paymentType.arabicLabel}',
+            style: const TextStyle(
+                fontSize: 12, color: AppTheme.textSecondary),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  LtrText(
+                    Money.formatWithCurrency(invoice.total),
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.primary),
+                  ),
+                  const SizedBox(height: 2),
+                  invoice.isSettled
+                      ? const Text('خالص',
+                          style: TextStyle(
+                              fontSize: 10, color: AppTheme.success))
+                      : LtrText(
+                          'متبقي: ${Money.format(invoice.balance)}',
+                          style: const TextStyle(
+                              fontSize: 10, color: AppTheme.danger),
+                        ),
+                ],
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_left,
+                  size: 18, color: AppTheme.textSecondary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Convenience helper used by the customers tab.
+///
+/// **IMPORTANT**: `useRootNavigator: false` is critical — without it,
+/// the sheet mounts on the root navigator and `context.watch<RetailStore>()`
+/// inside the sheet throws a `ProviderNotFoundException` (which
+/// manifests as a blank white sheet).
 Future<void> showCustomerDetails(
     BuildContext context, Customer customer) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useRootNavigator: false,
     backgroundColor: Colors.transparent,
-    // Use a fixed max height so the sheet never collapses to 0 and
-    // produces a white screen.
     constraints: const BoxConstraints(maxHeight: 600),
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

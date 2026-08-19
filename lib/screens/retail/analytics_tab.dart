@@ -7,15 +7,19 @@ import '../../utils/money.dart';
 import '../../utils/retail_store.dart';
 import '../../widgets/ltr_text.dart';
 import '../../widgets/shared_widgets.dart';
+import 'invoice_dialog.dart';
 
 /// Tab 6 — Analytics & Daily Summary.
 ///
-/// Provides a date picker at the top of the screen. Selecting a date
-/// dynamically recomputes:
+/// Provides a date picker + quick presets (Today / Yesterday / Last
+/// week) at the top of the screen. Selecting a date dynamically
+/// recomputes:
 ///   - Total Sales for that day
 ///   - Net Profit for that day
 ///   - Number of invoices issued that day
-///   - Itemized list of all invoices generated on that date
+///   - Average invoice value
+///   - Itemized list of every invoice issued on that date — each
+///     tappable to open the printable [InvoiceDialog].
 class AnalyticsTab extends StatefulWidget {
   const AnalyticsTab({super.key});
 
@@ -24,11 +28,21 @@ class AnalyticsTab extends StatefulWidget {
 }
 
 class _AnalyticsTabState extends State<AnalyticsTab> {
-  DateTime _selectedDate = DateTime.now();
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = _stripTime(DateTime.now());
+  }
+
+  /// Strips the time component so day comparisons are clean.
+  DateTime _stripTime(DateTime d) => DateTime(d.year, d.month, d.day);
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
+      useRootNavigator: false,
       initialDate: _selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
@@ -38,8 +52,29 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
       locale: const Locale('ar', 'MR'),
     );
     if (picked != null) {
-      setState(() => _selectedDate = picked);
+      setState(() => _selectedDate = _stripTime(picked));
     }
+  }
+
+  void _setPreset(_DatePreset preset) {
+    final now = _stripTime(DateTime.now());
+    setState(() {
+      switch (preset) {
+        case _DatePreset.today:
+          _selectedDate = now;
+        case _DatePreset.yesterday:
+          _selectedDate = now.subtract(const Duration(days: 1));
+        case _DatePreset.lastWeek:
+          _selectedDate = now.subtract(const Duration(days: 7));
+      }
+    });
+  }
+
+  bool get _isToday {
+    final now = _stripTime(DateTime.now());
+    return _selectedDate.year == now.year &&
+        _selectedDate.month == now.month &&
+        _selectedDate.day == now.day;
   }
 
   @override
@@ -82,9 +117,9 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'التاريخ المحدد',
-                            style: TextStyle(
+                          Text(
+                            _isToday ? 'اليوم' : 'التاريخ المحدد',
+                            style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -129,6 +164,35 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 ),
               ),
             ),
+          ),
+          const SizedBox(height: 8),
+          // ----- Quick presets -----
+          Row(
+            children: [
+              Expanded(
+                child: _PresetChip(
+                  label: 'اليوم',
+                  selected: _isToday,
+                  onTap: () => _setPreset(_DatePreset.today),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _PresetChip(
+                  label: 'أمس',
+                  selected: _isPreset(_DatePreset.yesterday),
+                  onTap: () => _setPreset(_DatePreset.yesterday),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _PresetChip(
+                  label: 'قبل أسبوع',
+                  selected: _isPreset(_DatePreset.lastWeek),
+                  onTap: () => _setPreset(_DatePreset.lastWeek),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           // ----- Daily metrics -----
@@ -202,14 +266,88 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
               ),
             ],
           ),
+          const SizedBox(height: 4),
+          const Text('اضغط على أي فاتورة لعرضها وطباعتها',
+              style: TextStyle(
+                  fontSize: 11, color: AppTheme.textSecondary)),
           const SizedBox(height: 8),
           if (invoices.isEmpty)
             const _EmptyDayCard()
           else
             ...invoices.map((inv) => _DayInvoiceTile(
                   invoice: inv,
+                  onTap: () => _openReceipt(inv),
                 )),
         ],
+      ),
+    );
+  }
+
+  bool _isPreset(_DatePreset preset) {
+    final now = _stripTime(DateTime.now());
+    switch (preset) {
+      case _DatePreset.today:
+        return _isToday;
+      case _DatePreset.yesterday:
+        final y = now.subtract(const Duration(days: 1));
+        return _selectedDate.year == y.year &&
+            _selectedDate.month == y.month &&
+            _selectedDate.day == y.day;
+      case _DatePreset.lastWeek:
+        final w = now.subtract(const Duration(days: 7));
+        return _selectedDate.year == w.year &&
+            _selectedDate.month == w.month &&
+            _selectedDate.day == w.day;
+    }
+  }
+
+  /// Re-opens the printable [InvoiceDialog] for a past invoice so the
+  /// user can save as PNG, save as PDF, or print it again.
+  void _openReceipt(Invoice invoice) {
+    showDialog<void>(
+      context: context,
+      useRootNavigator: false,
+      builder: (_) => InvoiceDialog(
+        invoice: invoice,
+        customerName: invoice.customerName,
+        customerPhone: invoice.customerPhone,
+      ),
+    );
+  }
+}
+
+enum _DatePreset { today, yesterday, lastWeek }
+
+class _PresetChip extends StatelessWidget {
+  const _PresetChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppTheme.primary : AppTheme.surfaceAlt,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : AppTheme.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -243,17 +381,13 @@ class _DailyKpiCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _bg().withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon, color: _bg(), size: 16),
-                ),
-              ],
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _bg().withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: _bg(), size: 16),
             ),
             const SizedBox(height: 8),
             Text(title,
@@ -284,18 +418,18 @@ class _EmptyDayCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
-          children: [
+          children: const [
             Icon(Icons.event_busy_outlined,
                 size: 36,
-                color: AppTheme.textSecondary.withValues(alpha: 0.6)),
-            const SizedBox(height: 12),
-            const Text('لا توجد فواتير في هذا اليوم',
+                color: AppTheme.textSecondary),
+            SizedBox(height: 12),
+            Text('لا توجد فواتير في هذا اليوم',
                 style: TextStyle(
                     fontSize: 14,
                     color: AppTheme.textSecondary,
                     fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            const Text('اختر يوماً آخر أو سجّل مبيعات جديدة من نقطة البيع',
+            SizedBox(height: 4),
+            Text('اختر يوماً آخر أو سجّل مبيعات جديدة من نقطة البيع',
                 style: TextStyle(
                     fontSize: 12, color: AppTheme.textSecondary),
                 textAlign: TextAlign.center),
@@ -307,66 +441,79 @@ class _EmptyDayCard extends StatelessWidget {
 }
 
 class _DayInvoiceTile extends StatelessWidget {
-  const _DayInvoiceTile({required this.invoice});
+  const _DayInvoiceTile({required this.invoice, required this.onTap});
   final Invoice invoice;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.receipt_outlined,
+                color: AppTheme.primary, size: 18),
           ),
-          child: const Icon(Icons.receipt_outlined,
-              color: AppTheme.primary, size: 18),
-        ),
-        title: Row(
-          children: [
-            LtrText(invoice.id,
+          title: Row(
+            children: [
+              LtrText(invoice.id,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w800)),
+              const SizedBox(width: 8),
+              LtrText(
+                '${invoice.date.hour.toString().padLeft(2, '0')}:${invoice.date.minute.toString().padLeft(2, '0')}',
                 style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w800)),
-            const SizedBox(width: 8),
-            LtrText(
-              '${invoice.date.hour.toString().padLeft(2, '0')}:${invoice.date.minute.toString().padLeft(2, '0')}',
-              style: const TextStyle(
-                  fontSize: 11, color: AppTheme.textSecondary),
-            ),
-          ],
-        ),
-        subtitle: Text(
-          '${invoice.customerName} • ${invoice.items.length} صنف • ${invoice.paymentType.arabicLabel}',
-          style: const TextStyle(
-              fontSize: 12, color: AppTheme.textSecondary),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            LtrText(
-              Money.formatWithCurrency(invoice.total),
-              style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.primary),
-            ),
-            const SizedBox(height: 2),
-            invoice.isSettled
-                ? const Text('خالص',
-                    style: TextStyle(
-                        fontSize: 10, color: AppTheme.success))
-                : LtrText(
-                    'متبقي: ${Money.format(invoice.balance)}',
+                    fontSize: 11, color: AppTheme.textSecondary),
+              ),
+            ],
+          ),
+          subtitle: Text(
+            '${invoice.customerName} • ${invoice.items.length} صنف • ${invoice.paymentType.arabicLabel}',
+            style: const TextStyle(
+                fontSize: 12, color: AppTheme.textSecondary),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  LtrText(
+                    Money.formatWithCurrency(invoice.total),
                     style: const TextStyle(
-                        fontSize: 10, color: AppTheme.danger),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.primary),
                   ),
-          ],
+                  const SizedBox(height: 2),
+                  invoice.isSettled
+                      ? const Text('خالص',
+                          style: TextStyle(
+                              fontSize: 10, color: AppTheme.success))
+                      : LtrText(
+                          'متبقي: ${Money.format(invoice.balance)}',
+                          style: const TextStyle(
+                              fontSize: 10, color: AppTheme.danger),
+                        ),
+                ],
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_left,
+                  size: 18, color: AppTheme.textSecondary),
+            ],
+          ),
         ),
       ),
     );

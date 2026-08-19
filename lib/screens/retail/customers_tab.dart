@@ -12,65 +12,90 @@ import 'customer_details_sheet.dart';
 /// Tab 2 — Customers & Debt Ledger.
 /// Lists registered customers with their debt balances and a quick
 /// "record payment" action. Tapping a customer opens the full profile.
-class CustomersTab extends StatelessWidget {
+/// Includes a search filter (name or phone).
+class CustomersTab extends StatefulWidget {
   const CustomersTab({super.key});
+
+  @override
+  State<CustomersTab> createState() => _CustomersTabState();
+}
+
+class _CustomersTabState extends State<CustomersTab> {
+  String _search = '';
 
   @override
   Widget build(BuildContext context) {
     final store = context.watch<RetailStore>();
-    final customers = store.customers;
+    final allCustomers = store.customers;
     final totalDebt = store.totalDebt;
     final totalProfit = store.totalProfit;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionTitle(
-          title: 'إدارة الزبناء والديون',
-          subtitle: 'سجل العملاء، الأرصدة المستحقة، وهامش الربح لكل زبون',
-          icon: Icons.people_alt_outlined,
-        ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            StatPill(
-              label: 'إجمالي العملاء',
-              value: '${customers.length} زبون',
-              tone: StatTone.info,
-              icon: Icons.people_outline,
-            ),
-            StatPill(
-              label: 'إجمالي الديون',
-              value: Money.formatWithCurrency(totalDebt),
-              tone: StatTone.danger,
-              icon: Icons.account_balance_wallet_outlined,
-            ),
-            StatPill(
-              label: 'صافي الأرباح',
-              value: Money.formatWithCurrency(totalProfit),
-              tone: StatTone.success,
-              icon: Icons.trending_up,
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-        Expanded(
-          child: customers.isEmpty
-              ? const EmptyState(
-                  icon: Icons.person_off_outlined,
-                  title: 'لا يوجد زبناء مسجلون',
-                  subtitle: 'سيظهر هنا كل من تبيع له على الحساب',
-                )
-              : ListView.separated(
-                  itemCount: customers.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) =>
-                      _CustomerCard(customer: customers[i]),
-                ),
-        ),
-      ],
+    // Filter customers by name OR phone.
+    final customers = _search.trim().isEmpty
+        ? allCustomers
+        : allCustomers
+            .where((c) =>
+                c.name.contains(_search.trim()) ||
+                c.phone.contains(_search.trim()))
+            .toList();
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SectionTitle(
+            title: 'إدارة الزبناء والديون',
+            subtitle: 'سجل العملاء، الأرصدة المستحقة، وهامش الربح لكل زبون',
+            icon: Icons.people_alt_outlined,
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              StatPill(
+                label: 'إجمالي العملاء',
+                value: '${allCustomers.length} زبون',
+                tone: StatTone.info,
+                icon: Icons.people_outline,
+              ),
+              StatPill(
+                label: 'إجمالي الديون',
+                value: Money.formatWithCurrency(totalDebt),
+                tone: StatTone.danger,
+                icon: Icons.account_balance_wallet_outlined,
+              ),
+              StatPill(
+                label: 'صافي الأرباح',
+                value: Money.formatWithCurrency(totalProfit),
+                tone: StatTone.success,
+                icon: Icons.trending_up,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          BrandedSearchField(
+            hint: 'ابحث بالاسم أو رقم الهاتف…',
+            onChanged: (v) => setState(() => _search = v),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: customers.isEmpty
+                ? const EmptyState(
+                    icon: Icons.person_off_outlined,
+                    title: 'لا يوجد زبناء مطابقون',
+                    subtitle: 'جرّب تعديل البحث',
+                  )
+                : ListView.separated(
+                    itemCount: customers.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, i) =>
+                        _CustomerCard(customer: customers[i]),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -94,7 +119,9 @@ class _CustomerCard extends StatelessWidget {
                 backgroundColor:
                     AppTheme.primary.withValues(alpha: 0.12),
                 child: Text(
-                  customer.name.substring(0, 1),
+                  customer.name.isNotEmpty
+                      ? customer.name.substring(0, 1)
+                      : '?',
                   style: const TextStyle(
                     color: AppTheme.primary,
                     fontWeight: FontWeight.w800,

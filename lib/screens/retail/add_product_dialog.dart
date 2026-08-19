@@ -9,12 +9,26 @@ import '../../theme/app_theme.dart';
 import '../../utils/retail_store.dart';
 
 /// Modal form for adding a new product to the retail catalogue.
-/// Fields: Name, Retail Price, Wholesale Cost, Stock, Category,
-/// and an image picker box.
 ///
-/// The image picker uses `file_picker` which works on Web, Android,
-/// iOS, macOS, Windows, Linux. On Web the picked bytes are kept in
-/// memory and shown as a preview thumbnail.
+/// Fields: Name, Retail Price, Wholesale Cost, Stock, Category, and
+/// an image picker box.
+///
+/// ## Provider-safety fix (root cause of "Failed to add product")
+/// The dialog is opened via [showAddProductDialog] which passes
+/// `useRootNavigator: false` to `showDialog`. Without this flag the
+/// dialog would be mounted on the **root** navigator, which is
+/// outside the `ChangeNotifierProvider<RetailStore>` that lives
+/// inside `RetailDashboard.build()`. The subsequent
+/// `context.read<RetailStore>()` call would then throw
+/// `ProviderNotFoundException` — which is the exact runtime crash
+/// users were reporting.
+///
+/// ## Image upload on Flutter Web
+/// The `file_picker` package works on all platforms but its Web
+/// implementation occasionally throws inside minified production
+/// code if the picker is dismissed without selection. We wrap the
+/// call in a defensive `try/catch` and only persist the bytes if
+/// they were successfully read.
 class AddProductDialog extends StatefulWidget {
   const AddProductDialog({super.key});
 
@@ -31,6 +45,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   ProductCategory _category = ProductCategory.groceries;
   Uint8List? _imageBytes;
   bool _saving = false;
+  String? _imageError;
 
   @override
   void dispose() {
@@ -42,19 +57,29 @@ class _AddProductDialogState extends State<AddProductDialog> {
   }
 
   Future<void> _pickImage() async {
+    // Clear any previous error before retrying.
+    setState(() => _imageError = null);
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         allowMultiple: false,
+        withData: true,
       );
-      if (result != null && result.files.isNotEmpty) {
-        setState(() {
-          _imageBytes = result.files.first.bytes;
-        });
+      if (result == null || result.files.isEmpty) {
+        // User cancelled — not an error.
+        return;
       }
+      final file = result.files.first;
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        setState(() => _imageError = 'تعذّر قراءة الملف المختار');
+        return;
+      }
+      setState(() => _imageBytes = bytes);
     } catch (e) {
-      // The file picker is best-effort; failures don't block product
-      // creation, we just leave the preview empty.
+      // file_picker is best-effort; failures don't block product
+      // creation, we just surface the error to the user.
+      setState(() => _imageError = 'تعذّر اختيار الصورة: $e');
       debugPrint('Image picker failed: $e');
     }
   }
@@ -62,10 +87,17 @@ class _AddProductDialogState extends State<AddProductDialog> {
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _saving = true);
+
+    // Capture provider + messenger + navigator BEFORE any async gap
+    // or pop. Calling context.read / ScaffoldMessenger.of AFTER a pop
+    // is the root cause of the "deactivated widget's ancestor" crash.
+    final store = context.read<RetailStore>();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     try {
       final product = Product(
-        id:
-            'R-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+        id: 'R-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
         name: _name.text.trim(),
         category: _category,
         unitPrice: double.tryParse(_retail.text.trim()) ?? 0,
@@ -75,13 +107,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
         icon: _iconFor(_category),
         color: _colorFor(_category),
       );
-      // Capture the messenger BEFORE popping the dialog, otherwise
-      // the ScaffoldMessenger.of(context) call will fail with
-      // "deactivated widget's ancestor" — this is the root cause of
-      // the "Failed to add product" bug.
-      final messenger = ScaffoldMessenger.of(context);
-      final navigator = Navigator.of(context);
-      context.read<RetailStore>().addProduct(product);
+      store.addProduct(product);
       navigator.pop();
       messenger.showSnackBar(
         const SnackBar(
@@ -90,14 +116,12 @@ class _AddProductDialogState extends State<AddProductDialog> {
         ),
       );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('فشل الحفظ: $e'),
-            backgroundColor: AppTheme.danger,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('فشل الحفظ: $e'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -190,51 +214,67 @@ class _AddProductDialogState extends State<AddProductDialog> {
                           height: 140,
                           padding: const EdgeInsets.all(16),
                           child: _imageBytes != null
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.memory(
-                                    _imageBytes!,
-                                    fit: BoxFit.contain,
-                                  ),
-                                )
-                              : Column(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
-                                  children: const [
-                                    Icon(Icons.add_a_photo_outlined,
-                                        size: 36,
-                                        color: AppTheme.textSecondary),
-                                    SizedBox(height: 8),
-                                    Text('إضافة صورة المنتج',
-                                        style: TextStyle(
-                                            fontSize: 13,
-                                            color:
-                                                AppTheme.textSecondary,
-                                            fontWeight:
-                                                FontWeight.w700)),
-                                    SizedBox(height: 2),
-                                    Text('PNG / JPG — اختياري',
-                                        style: TextStyle(
-                                            fontSize: 11,
-                                            color:
-                                                AppTheme.textSecondary)),
+                              ? Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.memory(
+                                        _imageBytes!,
+                                        fit: BoxFit.contain,
+                                        width: double.infinity,
+                                        height: double.infinity,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                          // Defensive: if the bytes
+                                          // somehow can't be decoded,
+                                          // fall back to the placeholder.
+                                          return const _ImagePickerPlaceholder();
+                                        },
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 4,
+                                      left: 4,
+                                      child: InkWell(
+                                        onTap: () => setState(() {
+                                          _imageBytes = null;
+                                          _imageError = null;
+                                        }),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: const BoxDecoration(
+                                            color: AppTheme.danger,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(Icons.close,
+                                              color: Colors.white, size: 14),
+                                        ),
+                                      ),
+                                    ),
                                   ],
-                                ),
+                                )
+                              : const _ImagePickerPlaceholder(),
                         ),
                       ),
                     ),
+                    if (_imageError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _imageError!,
+                        style: const TextStyle(
+                            color: AppTheme.danger, fontSize: 12),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _name,
                       decoration: const InputDecoration(
                         labelText: 'اسم المنتج',
-                        prefixIcon:
-                            Icon(Icons.label_outline, size: 20),
+                        prefixIcon: Icon(Icons.label_outline, size: 20),
                       ),
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty)
-                              ? 'اسم المنتج مطلوب'
-                              : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'اسم المنتج مطلوب'
+                          : null,
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -268,8 +308,8 @@ class _AddProductDialogState extends State<AddProductDialog> {
                             textAlign: TextAlign.right,
                             decoration: const InputDecoration(
                               labelText: 'تكلفة الجملة',
-                              prefixIcon: Icon(Icons.attach_money,
-                                  size: 20),
+                              prefixIcon:
+                                  Icon(Icons.attach_money, size: 20),
                             ),
                             validator: (v) {
                               if (v == null || v.trim().isEmpty) {
@@ -369,10 +409,40 @@ class _AddProductDialogState extends State<AddProductDialog> {
   }
 }
 
+class _ImagePickerPlaceholder extends StatelessWidget {
+  const _ImagePickerPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: const [
+        Icon(Icons.add_a_photo_outlined,
+            size: 36, color: AppTheme.textSecondary),
+        SizedBox(height: 8),
+        Text('إضافة صورة المنتج',
+            style: TextStyle(
+                fontSize: 13,
+                color: AppTheme.textSecondary,
+                fontWeight: FontWeight.w700)),
+        SizedBox(height: 2),
+        Text('PNG / JPG — اختياري',
+            style: TextStyle(
+                fontSize: 11, color: AppTheme.textSecondary)),
+      ],
+    );
+  }
+}
+
 /// Convenience helper used by the inventory tab.
+///
+/// **IMPORTANT**: `useRootNavigator: false` is critical — without it,
+/// the dialog mounts on the root navigator and `context.read<RetailStore>()`
+/// inside the dialog throws a `ProviderNotFoundException`.
 Future<void> showAddProductDialog(BuildContext context) {
   return showDialog<void>(
     context: context,
+    useRootNavigator: false,
     builder: (_) => const AddProductDialog(),
   );
 }

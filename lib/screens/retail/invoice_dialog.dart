@@ -677,6 +677,7 @@ Future<void> showInvoiceDialog(
   store.addInvoice(invoice);
   await showDialog<void>(
     context: context,
+    useRootNavigator: false,
     builder: (_) => InvoiceDialog(
       invoice: invoice,
       customerName: customerName,

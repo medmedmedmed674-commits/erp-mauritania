@@ -234,6 +234,7 @@ class _ExpenseTile extends StatelessWidget {
 Future<void> showAddExpenseDialog(BuildContext context) async {
   await showDialog<void>(
     context: context,
+    useRootNavigator: false,
     builder: (_) => const _AddExpenseDialog(),
   );
 }
@@ -263,6 +264,7 @@ class _AddExpenseDialogState extends State<_AddExpenseDialog> {
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
+      useRootNavigator: false,
       initialDate: _date,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
@@ -273,20 +275,47 @@ class _AddExpenseDialogState extends State<_AddExpenseDialog> {
   void _save() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _saving = true);
+
+    // Capture provider + messenger + navigator BEFORE pop — calling
+    // ScaffoldMessenger.of(context) after Navigator.pop crashes with
+    // "deactivated widget's ancestor". And the dialog must NOT use the
+    // root navigator (useRootNavigator: false in showAddExpenseDialog)
+    // or context.read<RetailStore>() will throw ProviderNotFoundException.
+    final store = context.read<RetailStore>();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     try {
+      final amount = double.tryParse(_amount.text.trim()) ?? 0;
+      if (amount <= 0) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('المبلغ يجب أن يكون أكبر من صفر'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+        return;
+      }
       final expense = Expense(
         id: 'E-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
         category: _category,
-        amount: double.tryParse(_amount.text.trim()) ?? 0,
+        amount: amount,
         date: _date,
         note: _note.text.trim(),
       );
-      context.read<RetailStore>().addExpense(expense);
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      store.addExpense(expense);
+      navigator.pop();
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('تم تسجيل المصروف بنجاح'),
           backgroundColor: AppTheme.success,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('فشل الحفظ: $e'),
+          backgroundColor: AppTheme.danger,
         ),
       );
     } finally {
