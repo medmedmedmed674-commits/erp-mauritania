@@ -127,6 +127,21 @@ class RetailStore extends ChangeNotifier {
     return null;
   }
 
+  /// Adds a new customer to the ledger.
+  void addCustomer(Customer c) {
+    _customers.insert(0, c);
+    notifyListeners();
+  }
+
+  /// Removes a customer by id. Returns true if a customer was removed.
+  bool deleteCustomer(String id) {
+    final i = _customers.indexWhere((c) => c.id == id);
+    if (i == -1) return false;
+    _customers.removeAt(i);
+    notifyListeners();
+    return true;
+  }
+
   /// Records a debt-collection payment against a customer.
   /// Returns the updated customer, or null if the customer was not found.
   Customer? recordPayment(String customerId, double amount) {

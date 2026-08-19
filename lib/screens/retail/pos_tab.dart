@@ -265,16 +265,36 @@ class _ProductTileState extends State<_ProductTile>
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Center(
-                          child: widget.product.imageAsset != null
+                          child: widget.product.imageBytes != null
                               ? ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
-                                  child: Image.asset(
-                                    widget.product.imageAsset!,
+                                  child: Image.memory(
+                                    widget.product.imageBytes!,
                                     fit: BoxFit.cover,
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                    errorBuilder: (_, __, ___) => Icon(
+                                      widget.product.icon,
+                                      size: 36,
+                                      color: widget.product.color,
+                                    ),
                                   ),
                                 )
-                              : Icon(widget.product.icon,
-                                  size: 36, color: widget.product.color),
+                              : widget.product.imageAsset != null
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Image.asset(
+                                        widget.product.imageAsset!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          widget.product.icon,
+                                          size: 36,
+                                          color: widget.product.color,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(widget.product.icon,
+                                      size: 36, color: widget.product.color),
                         ),
                       ),
                       if (widget.product.isLowStock)

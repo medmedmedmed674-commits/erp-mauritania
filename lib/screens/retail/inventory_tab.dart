@@ -392,14 +392,27 @@ class _InventoryCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: product.color.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(product.icon,
-                            size: 18, color: product.color),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: product.imageBytes != null
+                            ? Image.memory(
+                                product.imageBytes!,
+                                width: 36,
+                                height: 36,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    _categoryIcon(product),
+                              )
+                            : product.imageAsset != null
+                                ? Image.asset(
+                                    product.imageAsset!,
+                                    width: 36,
+                                    height: 36,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        _categoryIcon(product),
+                                  )
+                                : _categoryIcon(product),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -508,6 +521,22 @@ class _InventoryCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// Renders the category icon inside a tinted square — used when the
+  /// product has no image bytes (default state) or when image decoding
+  /// fails for any reason.
+  Widget _categoryIcon(Product product) {
+    return Container(
+      width: 36,
+      height: 36,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: product.color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(product.icon, size: 18, color: product.color),
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 /// Enumerated product categories shared by retail + wholesale.
@@ -20,6 +22,11 @@ enum ProductCategory {
 /// stock ledger. `unitPrice` is the retail price, `wholesaleCost` is the
 /// purchase cost from the supplier, `cartonPrice` is the wholesale
 /// per-carton price.
+///
+/// Image persistence: the picked image is stored as in-memory bytes
+/// (`imageBytes`) so it renders consistently across Web, mobile, and
+/// desktop without needing a filesystem path. The `imageAsset` field is
+/// reserved for bundled asset paths.
 @immutable
 class Product {
   const Product({
@@ -36,6 +43,7 @@ class Product {
     this.icon = Icons.inventory_2_outlined,
     this.color = const Color(0xFF1E6FBA),
     this.imageAsset,
+    this.imageBytes,
   });
 
   final String id;
@@ -52,6 +60,10 @@ class Product {
   final Color color;
   final String? imageAsset;
 
+  /// In-memory image bytes for products created via the image picker
+  /// (works on Flutter Web, mobile, and desktop without writing to disk).
+  final Uint8List? imageBytes;
+
   bool get isLowStock => stock <= lowStockThreshold;
 
   /// Per-unit profit margin (retail price minus wholesale cost).
@@ -59,6 +71,10 @@ class Product {
 
   /// Total inventory valuation at retail price.
   double get stockValue => unitPrice * stock;
+
+  /// True if the product has either a bundled imageAsset or in-memory
+  /// imageBytes that can be rendered.
+  bool get hasImage => imageBytes != null || imageAsset != null;
 
   /// Create a copy with overridden fields (used by the Add-Product modal
   /// when editing an existing line).
@@ -75,6 +91,7 @@ class Product {
     IconData? icon,
     Color? color,
     String? imageAsset,
+    Uint8List? imageBytes,
   }) =>
       Product(
         id: id ?? this.id,
@@ -89,6 +106,7 @@ class Product {
         icon: icon ?? this.icon,
         color: color ?? this.color,
         imageAsset: imageAsset ?? this.imageAsset,
+        imageBytes: imageBytes ?? this.imageBytes,
       );
 }
 

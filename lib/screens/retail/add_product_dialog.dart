@@ -106,6 +106,9 @@ class _AddProductDialogState extends State<AddProductDialog> {
         lowStockThreshold: 10,
         icon: _iconFor(_category),
         color: _colorFor(_category),
+        // Persist the picked image bytes so the inventory grid renders
+        // the user's photo (not just the category icon).
+        imageBytes: _imageBytes,
       );
       store.addProduct(product);
       navigator.pop();
