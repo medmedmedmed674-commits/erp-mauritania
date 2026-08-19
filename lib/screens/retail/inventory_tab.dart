@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/product.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/money.dart';
+import '../../utils/product_service.dart';
 import '../../utils/retail_store.dart';
 import '../../widgets/ltr_text.dart';
 import '../../widgets/shared_widgets.dart';
@@ -82,10 +83,23 @@ class _InventoryTabState extends State<InventoryTab> {
     if (!confirmed || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final store = context.read<RetailStore>();
-    store.deleteProduct(product.id);
+    // Use the ProductService cascading-delete entry point — this
+    // both removes the product AND records the id so the Purchases
+    // tab can prune itself on the next rebuild.
+    final service = ProductService(store);
+    final result = service.cascadeDeleteProduct(product.id);
+    if (result == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('المنتج غير موجود'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+      return;
+    }
     messenger.showSnackBar(
       SnackBar(
-        content: Text('تم حذف "${product.name}"'),
+        content: Text('تم حذف "${product.name}" وإزالته من قائمة المشتريات'),
         backgroundColor: AppTheme.danger,
       ),
     );
@@ -124,14 +138,15 @@ class _InventoryTabState extends State<InventoryTab> {
 
     final messenger = ScaffoldMessenger.of(context);
     final store = context.read<RetailStore>();
-    for (final id in _selected.toList()) {
-      store.deleteProduct(id);
-    }
-    final deletedCount = count;
+    // Use the ProductService bulk-delete helper — internally calls
+    // cascadeDeleteProduct for each id, recording every removal in the
+    // store's _removedProductIds buffer so the Purchases tab can prune.
+    final service = ProductService(store);
+    final deletedCount = service.bulkDelete(_selected.toList());
     _exitSelectionMode();
     messenger.showSnackBar(
       SnackBar(
-        content: Text('تم حذف $deletedCount منتج'),
+        content: Text('تم حذف $deletedCount منتج وإزالتها من قائمة المشتريات'),
         backgroundColor: AppTheme.danger,
       ),
     );

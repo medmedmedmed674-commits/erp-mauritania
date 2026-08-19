@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/product.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/product_service.dart';
 import '../../utils/retail_store.dart';
 
 /// Modal form for adding OR editing a product in the retail catalogue.
@@ -166,12 +167,18 @@ class _AddProductDialogState extends State<AddProductDialog> {
         imageAsset: existing?.imageAsset,
       );
 
-      // Perform the mutation. In a real backend-backed app this would
-      // be an `await apiClient.saveProduct(product)` call.
+      // Perform the mutation via the ProductService layer so the
+      // audit trail is explicit. In a real backend-backed app this
+      // would be an `await apiClient.saveProduct(product)` call.
+      final service = ProductService(store);
       if (isEditMode) {
-        store.updateProduct(product);
+        final updated = service.updateProduct(product);
+        if (!updated) {
+          throw StateError(
+              'Product ${product.id} not found — cannot update.');
+        }
       } else {
-        store.addProduct(product);
+        service.addProduct(product);
       }
 
       // Close the modal ONLY after the operation confirms success.
