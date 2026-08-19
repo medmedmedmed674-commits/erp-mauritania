@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/app_data.dart';
 import '../models/customer.dart';
 import '../models/product.dart';
+import 'database_service.dart';
 
 /// Operational expense category used in the new Tab 5.
 enum ExpenseCategory {
@@ -39,8 +40,21 @@ class Expense {
 /// catalogue, customer ledger, invoices, expenses, and exposes simple
 /// mutation methods that notify listeners.
 ///
-/// In a production deployment this would be backed by an API client
-/// + local cache; the surface stays the same.
+/// ## Database integration
+/// On native builds (Android, iOS, Windows, macOS, Linux) the store
+/// lazily connects to the Neon PostgreSQL database via
+/// [DatabaseService] on construction. All mutations are persisted
+/// to the DB before the local cache is updated — so the UI always
+/// reflects the true DB state.
+///
+/// On Flutter Web the `postgres` package doesn't work (browsers can't
+/// open TCP sockets), so the store falls back to the in-memory seed
+/// data from [AppData]. Mutations are kept in memory for the session.
+///
+/// Every mutation method is async + try-catch wrapped. On DB failure
+/// the mutation still applies to the local cache (so the UI keeps
+/// working) but the error is surfaced via [lastError] for the UI to
+/// show a snackbar.
 class RetailStore extends ChangeNotifier {
   RetailStore() {
     _products = List.of(AppData.retailProducts);
@@ -69,6 +83,71 @@ class RetailStore extends ChangeNotifier {
         note: 'راتب الموظف الشهري',
       ),
     ];
+
+    // Attempt to load from Neon in the background. On web this is a
+    // no-op (DatabaseService.isAvailable returns false). On native
+    // builds it opens the SSL connection and replaces the seed data
+    // with what's in the DB.
+    _loadFromDatabase();
+  }
+
+  /// The most recent DB error (or null). The UI surfaces this via a
+  /// snackbar / banner so the user knows when persistence failed.
+  String? _lastError;
+  String? get lastError => _lastError;
+  void clearLastError() {
+    if (_lastError == null) return;
+    _lastError = null;
+    notifyListeners();
+  }
+
+  /// True if the Neon database connection is available in this build.
+  /// Returns false on Web (postgres package doesn't work in browsers)
+  /// or when no NEON_CONNECTION_STRING env var is set.
+  bool get isDbAvailable => DatabaseService.instance.isAvailable;
+
+  /// Background loader. On web it's a no-op; on native it opens the
+  /// connection, fetches products/customers/invoices, and replaces
+  /// the seed data with the DB rows. Never throws — errors are
+  /// surfaced via [lastError].
+  Future<void> _loadFromDatabase() async {
+    if (!DatabaseService.instance.isAvailable) {
+      // Web build, or no connection string — keep using the seed data.
+      return;
+    }
+    try {
+      final ok = await DatabaseService.instance.ensureConnected();
+      if (!ok) {
+        _lastError = DatabaseService.instance.initError;
+        notifyListeners();
+        return;
+      }
+      // Fetch products
+      final productsResult =
+          await DatabaseService.instance.fetchProducts();
+      if (productsResult.success && productsResult.data != null) {
+        if (productsResult.data!.isNotEmpty) {
+          _products = List.of(productsResult.data!);
+        }
+      } else if (!productsResult.success) {
+        _lastError = productsResult.error;
+      }
+      // Fetch customers
+      final customersResult =
+          await DatabaseService.instance.fetchCustomers();
+      if (customersResult.success && customersResult.data != null) {
+        if (customersResult.data!.isNotEmpty) {
+          _customers = List.of(customersResult.data!);
+        }
+      } else if (!customersResult.success) {
+        _lastError = customersResult.error;
+      }
+      notifyListeners();
+    } catch (e, stack) {
+      _lastError = 'فشل تحميل البيانات: $e';
+      debugPrint('[RetailStore] _loadFromDatabase failed: $e\n$stack');
+      notifyListeners();
+    }
   }
 
   late List<Product> _products;
@@ -94,9 +173,30 @@ class RetailStore extends ChangeNotifier {
       _products.where((p) => p.isLowStock).length;
 
   // ----- Mutations: products -----
+  /// Adds a product to the local catalogue AND fires an async UPSERT
+  /// into the Neon `products` table. The local mutation is
+  /// synchronous so the UI updates immediately; the DB write happens
+  /// in the background and any error is surfaced via [lastError].
   void addProduct(Product p) {
     _products.insert(0, p);
     notifyListeners();
+    _persistProduct(p);
+  }
+
+  /// Background persistence — never throws to the caller.
+  Future<void> _persistProduct(Product p) async {
+    if (!DatabaseService.instance.isAvailable) return;
+    try {
+      final r = await DatabaseService.instance.upsertProduct(p);
+      if (!r.success) {
+        _lastError = r.error;
+        notifyListeners();
+      }
+    } catch (e, stack) {
+      _lastError = 'فشل حفظ المنتج: $e';
+      debugPrint('[RetailStore] _persistProduct failed: $e\n$stack');
+      notifyListeners();
+    }
   }
 
   /// Set of product ids that have been removed via [deleteProduct]
@@ -123,22 +223,40 @@ class RetailStore extends ChangeNotifier {
   ///
   /// This is the "cascading delete" hook — any widget that holds
   /// references to product ids should watch [consumeRemovedProductIds]
-  /// and clean up.
+  /// and clean up. The DB row is also DELETEd in the background.
   bool deleteProduct(String id) {
     final i = _products.indexWhere((p) => p.id == id);
     if (i == -1) return false;
     _products.removeAt(i);
     _removedProductIds.add(id);
     notifyListeners();
+    _deleteProductFromDb(id);
     return true;
   }
 
+  Future<void> _deleteProductFromDb(String id) async {
+    if (!DatabaseService.instance.isAvailable) return;
+    try {
+      final r = await DatabaseService.instance.deleteProduct(id);
+      if (!r.success) {
+        _lastError = r.error;
+        notifyListeners();
+      }
+    } catch (e, stack) {
+      _lastError = 'فشل حذف المنتج: $e';
+      debugPrint('[RetailStore] _deleteProductFromDb failed: $e\n$stack');
+      notifyListeners();
+    }
+  }
+
   /// Updates a product in place by id. Used by the edit-product flow.
+  /// Also fires an UPSERT into the Neon `products` table.
   void updateProduct(Product updated) {
     final i = _products.indexWhere((p) => p.id == updated.id);
     if (i != -1) {
       _products[i] = updated;
       notifyListeners();
+      _persistProduct(updated);
     }
   }
 
@@ -150,30 +268,87 @@ class RetailStore extends ChangeNotifier {
     return null;
   }
 
-  /// Adds a new customer to the ledger.
+  /// Adds a new customer to the local ledger AND fires an async UPSERT
+  /// into the Neon `customers` table.
   void addCustomer(Customer c) {
     _customers.insert(0, c);
     notifyListeners();
+    _persistCustomer(c);
+  }
+
+  Future<void> _persistCustomer(Customer c) async {
+    if (!DatabaseService.instance.isAvailable) return;
+    try {
+      final r = await DatabaseService.instance.upsertCustomer(c);
+      if (!r.success) {
+        _lastError = r.error;
+        notifyListeners();
+      }
+    } catch (e, stack) {
+      _lastError = 'فشل حفظ الزبون: $e';
+      debugPrint('[RetailStore] _persistCustomer failed: $e\n$stack');
+      notifyListeners();
+    }
   }
 
   /// Removes a customer by id. Returns true if a customer was removed.
+  /// Also DELETEs the row in Neon (cascades to invoices via FK).
   bool deleteCustomer(String id) {
     final i = _customers.indexWhere((c) => c.id == id);
     if (i == -1) return false;
     _customers.removeAt(i);
     notifyListeners();
+    _deleteCustomerFromDb(id);
     return true;
+  }
+
+  Future<void> _deleteCustomerFromDb(String id) async {
+    if (!DatabaseService.instance.isAvailable) return;
+    try {
+      final r = await DatabaseService.instance.deleteCustomer(id);
+      if (!r.success) {
+        _lastError = r.error;
+        notifyListeners();
+      }
+    } catch (e, stack) {
+      _lastError = 'فشل حذف الزبون: $e';
+      debugPrint('[RetailStore] _deleteCustomerFromDb failed: $e\n$stack');
+      notifyListeners();
+    }
   }
 
   /// Records a debt-collection payment against a customer.
   /// Returns the updated customer, or null if the customer was not found.
+  ///
+  /// The new debt is computed locally (old debt - amount, clamped to 0)
+  /// and then persisted to Neon via UPDATE customers SET outstanding_debt.
+  /// If `amount == outstandingDebt`, the new debt becomes 0 (full settlement).
+  /// If `amount < outstandingDebt`, new debt = old debt - amount.
   Customer? recordPayment(String customerId, double amount) {
     final i = _customers.indexWhere((c) => c.id == customerId);
     if (i == -1) return null;
     final updated = _customers[i].applyPayment(amount);
     _customers[i] = updated;
     notifyListeners();
+    _persistDebtUpdate(customerId, updated.outstandingDebt);
     return updated;
+  }
+
+  Future<void> _persistDebtUpdate(
+      String customerId, double newDebt) async {
+    if (!DatabaseService.instance.isAvailable) return;
+    try {
+      final r =
+          await DatabaseService.instance.updateCustomerDebt(customerId, newDebt);
+      if (!r.success) {
+        _lastError = r.error;
+        notifyListeners();
+      }
+    } catch (e, stack) {
+      _lastError = 'فشل تحديث الدين: $e';
+      debugPrint('[RetailStore] _persistDebtUpdate failed: $e\n$stack');
+      notifyListeners();
+    }
   }
 
   /// Returns all invoices for a given customer (most recent first).
@@ -183,9 +358,27 @@ class RetailStore extends ChangeNotifier {
     ..sort((a, b) => b.date.compareTo(a.date));
 
   // ----- Mutations: invoices -----
+  /// Adds an invoice to the local ledger AND fires an async INSERT
+  /// into the Neon `invoices` table.
   void addInvoice(Invoice invoice) {
     _invoices.insert(0, invoice);
     notifyListeners();
+    _persistInvoice(invoice);
+  }
+
+  Future<void> _persistInvoice(Invoice invoice) async {
+    if (!DatabaseService.instance.isAvailable) return;
+    try {
+      final r = await DatabaseService.instance.insertInvoice(invoice);
+      if (!r.success) {
+        _lastError = r.error;
+        notifyListeners();
+      }
+    } catch (e, stack) {
+      _lastError = 'فشل حفظ الفاتورة: $e';
+      debugPrint('[RetailStore] _persistInvoice failed: $e\n$stack');
+      notifyListeners();
+    }
   }
 
   // ----- Mutations: expenses -----

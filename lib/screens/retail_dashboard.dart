@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../theme/app_theme.dart';
 import '../utils/locale_provider.dart';
 import '../utils/retail_store.dart';
 import '../widgets/adaptive_dashboard_scaffold.dart';
@@ -23,6 +24,11 @@ import 'retail/purchases_tab.dart';
 ///
 /// Tab labels are localized — switching Arabic ⇄ French via the
 /// [LanguageSwitcher] in the app bar updates all 6 tab labels live.
+///
+/// A small DB status banner appears at the top of the body when the
+/// Neon database connection is unavailable (e.g. on Flutter Web) or
+/// when a recent DB operation failed. This makes the fallback mode
+/// visible to the user instead of failing silently.
 class RetailDashboard extends StatefulWidget {
   const RetailDashboard({super.key, this.businessName = 'مؤسسة النور للتجزئة'});
 
@@ -82,15 +88,88 @@ class _RetailDashboardState extends State<RetailDashboard> {
         tabs: tabs,
         currentIndex: _index,
         onIndexChanged: (i) => setState(() => _index = i),
-        child: IndexedStack(
-          index: _index,
-          children: const [
-            PosTab(),
-            CustomersTab(),
-            InventoryTab(),
-            PurchasesTab(),
-            ExpensesTab(),
-            AnalyticsTab(),
+        child: Column(
+          children: [
+            // DB status banner — shown only when there's an error
+            // or when running on the web fallback.
+            const _DbStatusBanner(),
+            // Main tab content
+            Expanded(
+              child: IndexedStack(
+                index: _index,
+                children: const [
+                  PosTab(),
+                  CustomersTab(),
+                  InventoryTab(),
+                  PurchasesTab(),
+                  ExpensesTab(),
+                  AnalyticsTab(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact status banner that shows DB connection state.
+///
+/// - Hidden when DB is connected and there's no recent error.
+/// - Shows a yellow "fallback" banner when running on Web.
+/// - Shows a red "error" banner when a DB operation failed.
+class _DbStatusBanner extends StatelessWidget {
+  const _DbStatusBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<RetailStore>();
+    final error = store.lastError;
+    final isDb = store.isDbAvailable;
+
+    // No banner when everything is fine.
+    if (error == null && isDb) return const SizedBox.shrink();
+
+    final message = error ?? 'وضع المخزن المحلي — قاعدة البيانات غير متاحة على الويب.';
+    final color = error != null
+        ? AppTheme.danger
+        : AppTheme.warning;
+
+    return Material(
+      color: color.withValues(alpha: 0.12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              error != null
+                  ? Icons.error_outline
+                  : Icons.cloud_off_outlined,
+              size: 16,
+              color: color,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (error != null)
+              IconButton(
+                icon: Icon(Icons.close, size: 14, color: color),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: store.clearLastError,
+                tooltip: 'إغلاق',
+              ),
           ],
         ),
       ),

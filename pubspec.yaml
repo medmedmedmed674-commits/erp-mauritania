@@ -37,6 +37,17 @@ dependencies:
   # Saving rendered invoice PNG to disk on mobile/desktop
   path_provider: ^2.1.5
 
+  # PostgreSQL client — used on mobile/desktop to connect directly to
+  # the Neon database. NOTE: this package uses dart:io sockets, so it
+  # does NOT work on Flutter Web (browsers can't open raw TCP
+  # connections). The DatabaseService gracefully falls back to the
+  # in-memory store on Web builds.
+  postgres: ^3.4.8
+
+  # Environment variables — used to read NEON_CONNECTION_STRING at
+  # runtime without hardcoding the credentials in the source tree.
+  flutter_dotenv: ^5.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -48,6 +59,7 @@ flutter:
   assets:
     - assets/images/
     - assets/fonts/
+    - .env
 
   fonts:
     - family: Cairo
